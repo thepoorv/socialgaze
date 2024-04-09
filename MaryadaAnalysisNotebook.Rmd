@@ -1,0 +1,4477 @@
+---
+title: "Maryada Analysis Notebook"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+date: "2023-03-01"
+---
+
+```{r setup, include=FALSE}
+
+# loading all the libraries I need
+
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(haven)
+library(here)       # file paths  ----
+library(labelled)
+library(sjlabelled) # more tools for labelled data ----
+library(psych)
+library(furniture)
+library(broom)
+library(patchwork)
+library(dagitty)
+library(ggdag)
+library(scales)
+library(modelsummary)
+library(lme4)
+library(ordinal)
+library(forcats)
+library(readr)
+library(stringr)
+library(questionr)
+library(sjmisc)
+library(purrr)
+library(effects)
+library(MASS)
+library(brms)
+library(sem)
+library(stats)
+library(lavaan)
+library(lavaanPlot)
+library(semPlot)
+library(mice)
+library(cSEM)
+library(stargazer)
+library(mirt)
+library(readxl)
+library(tibble)
+library(knitr)
+library(kableExtra)
+library(likert)
+library(HH)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(colorspace)   #better colors for ggplot
+library(RColorBrewer)
+library(grid)
+library(dplyr)
+
+
+```
+
+
+RECAP OF EXPERIMENTAL DESIGN
+
+Design
+
+```{r fig_n1, fig.cap="Study Design", fig.align='center'}
+knitr::include_graphics('Treatment.png')
+```
+
+
+Procedure - the different questions 
+
+1. Screening questions - background data
+2. Survey - Baseline condition - FRIEND
+3. Survey - Baseline condition - PARENT OR EXTENDED
+4. Questions on punishment/sanctions (outside of 'gaze')
+5. more background data
+
+
+```{r, include=FALSE}
+dataset <- read.csv("Social Gaze_split.csv")
+city <- read_excel("city.xlsx")
+college <- read_excel("coll.xlsx")
+```
+
+
+Creating a data dictionary to understand what is going on and look at the questions
+
+```{r, include=FALSE}
+m_dataset <- dataset %>%
+  dplyr::select(8, 37:104, 274:341, 357:424) %>%
+  dplyr::slice(-c(1:2)) %>%
+  mutate_at(vars(-1), factor)
+
+#dictionary for the entire dataset
+dictionary <- labelled::generate_dictionary(m_dataset)
+dictionary
+
+#generating a data frame with just the survey questions
+survey_questions <- dataset[1,]
+
+questions <- survey_questions %>%
+  dplyr::select(8, 37:104, 274:341, 357:424) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "survey question")
+
+# extract variable labels and survey questions and join the two data frames
+df_labels <- dictionary %>%
+  dplyr::select(variable, levels, col_type) %>%
+  left_join(questions, by = "variable")
+```
+
+```{r}
+
+# extract variable labels and survey questions and join the two data frames
+df_labels <- dictionary %>%
+  dplyr::select(variable, levels, col_type) %>%
+  left_join(questions, by = "variable")
+
+```
+
+
+```{r setup, eval=FALSE, include=FALSE}
+test123 <- dataset %>%
+  filter(consent_acquired == "1") %>%
+  filter(screened_out == "0") %>%
+  filter (which_survey == "maryada") %>%
+  filter (Finished == "True") %>%
+  filter ((attention_check_p != resp_age)|(attention_check_x != resp_age)) %>%
+  dplyr::select (-starts_with(c("rf", "rp", "rx"))) 
+
+#fixing some errors in how the variables were named
+test123 <- test123 %>%
+  mutate (mfb.c_clothing_1 = as_factor(mpb.f_clothing_1),
+             mfb.c_clothing_2 = as_factor(mpb.f_clothing_2),
+             mfb.c_clothing_3 = as_factor(mpb.f_clothing_3),
+             mfg.c_clothing_1 = as_factor(mpg.f_clothing_1),
+             mfg.c_clothing_2 = as_factor(mpg.f_clothing_2),
+             mfg.c_clothing_3 = as_factor(mpg.f_clothing_3)) %>%
+  dplyr::select(-c(mpb.f_clothing_1, mpb.f_clothing_2, mpb.f_clothing_3,
+         mpg.f_clothing_1, mpg.f_clothing_2, mpg.f_clothing_3)) 
+
+  
+dictionary <- labelled::generate_dictionary(test123)
+dictionary
+```
+
+
+```{r donation, eval=FALSE, include=FALSE}
+
+# Low priority analysis:
+# 
+# Donation data for all respondents
+# 
+# Based on a chi-squared test of independence, there is no sig. difference between the different types of gaze in terms of the location (region of India) or the type of organisation they donate to. I'm noting this here, but unlikely to report this in the final chapter since there's a lot more central stuff to discuss.
+
+
+# donation_dat <- test123 %>%
+#   dplyr::select(8, 99:104, 178:183, 261:266, 317) %>%
+#   unite("x.don_org", c(x.don_north, x.don_south, x.don_east, x.don_west, x.don_random), sep = "") %>%
+#   unite("p.don_org", c(p.don_north, p.don_south, p.don_east, p.don_west, p.don_random), sep = "") %>%
+#   unite("f.don_org", c(f.don_north, f.don_south, f.don_east, f.don_west, f.don_random), sep = "") %>%
+#   unite("don_org", c(x.don_org, p.don_org, f.don_org), sep = "") %>%
+#   unite("don_location", c(f.don_region, p.don_region, x.don_region), sep = "") %>%
+#   mutate(don_location = ifelse(don_location == "", NA, don_location)) %>%
+#   mutate(don_org = ifelse(don_org == "", NA, don_org)) %>%
+#   mutate_at(vars(-1), factor) %>%
+#   na.omit()
+# 
+# dictionary_don <- labelled::generate_dictionary(donation_dat)
+# dictionary_don
+# 
+# # create a contingency table of don_org and donation_gaze
+# table_don <- table(donation_dat$don_location, donation_dat$donation_gaze)
+# 
+# # perform the chi-squared test of independence
+# chisq.test(table_don)
+# 
+# #no sig difference in donation patterns based on scrutiny
+
+```
+
+
+```{r, eval=FALSE}
+
+# Code to create background data table for all participants
+#
+# creating a separate table with all the background/demographic data. Will use this for stage 1 of the CLMM analysis.
+
+background_dat <- test123 %>%
+  dplyr::select(ResponseId , resp_gender, resp_age, resp_raisedby_parent, resp_rel, resp_rel_current,
+         resp_caste, resp_country, resp_residence, resp_has_natplace,
+         resp_natplace_name, resp_natplace_type, resp_natplace_freq,
+         resp_occupation, resp_grad_months, resp_is_married, resp_extended_kin,
+         back_mother_edu, back_father_edu, back_parents_rel, back_parents_caste, back_living_sit,
+         back_living_sit_8_TEXT, back.totalfaminhouse, back.roomshouse, back.student_level,
+         back.student_level_6_TEXT, back.graduate_level, back.graduate_level_6_TEXT,
+         back.coll_loc, back.coll_type, back.coll_type_5_TEXT, back.friend_rel,
+         back.friend_caste, back.friend_gender, back_aunt_resid, back_aunt_uncle) %>%
+  mutate(native_place = replace(resp_natplace_type, resp_natplace_type == "", "no native place")) %>%
+  mutate_at(vars(-c(ResponseId, resp_age, resp_residence, resp_natplace_name, resp_natplace_freq,
+                    back_living_sit_8_TEXT, back.student_level_6_TEXT, back.graduate_level_6_TEXT,
+                    back.coll_loc, back.coll_type_5_TEXT)), factor) %>%
+  mutate(native_place = fct_recode(native_place, "Metro or None" = "no native place",
+                          "Village" = "It is a village",
+                          "Small town or city" = "It is a small town or city",
+                          "Metro or None" = "It is a big metropolitan city")) %>%
+  mutate(caste = fct_recode(resp_caste, "Brahmin" = "Brahmin",
+                          "Kshatriya" = "Kshatriya",
+                          "Vaishya" = "Vaishya",
+                          "OBC" = "OBC",
+                          "SCST" = "SC",
+                          "SCST" = "Dalit",
+                          "SCST" = "ST")) %>%
+  mutate(mother_edu = fct_recode(back_mother_edu, "None or partial schooling" = "My mother did not receive any formal education",
+                          "None or partial schooling" = "My mother had some schooling, but did not finish her 10th",
+                          "10th or 12th complete" = "10th pass",
+                          "10th or 12th complete" = "12th pass",
+                          "Undergraduate" = "Bachelor's degree level (e.g. BA/BSc/BCom)",
+                          "Postgraduate" = "Master's degree level (e.g. MA/MSc/MBA)",
+                          "Postgraduate" = "PhD")) %>%
+   mutate(father_edu = fct_recode(back_father_edu, "None or partial schooling" = "My father did not receive any formal education",
+                          "None or partial schooling" = "My father had some schooling, but did not finish his 10th",
+                          "10th or 12th complete" = "10th pass",
+                          "10th or 12th complete" = "12th pass",
+                          "Undergraduate" = "Bachelor's degree level (e.g. BA/BSc/BCom)",
+                          "Postgraduate" = "Master's degree level (e.g. MA/MSc/MBA)",
+                          "Postgraduate" = "PhD")) %>%
+  mutate(famsize = fct_recode(back.totalfaminhouse, "Small" = "2",
+                                       "Small" = "3", "Medium" = "4", "Medium" = "5", "Medium" = "6",
+                                       "Large" = "7", "Large" = "8", "Large" = "9", "Large" = "10",
+                              "Large" = "over 10 members")) %>%
+  mutate(living_with = fct_recode(back_living_sit, "Alone or with friends" = "I live alone",
+                          "Alone or with friends" = "In a hostel",
+                          "Alone or with friends" = "With a friend/friends",
+                          "Family beyond parents" = "In a joint family with my parents as well",
+                          "Family beyond parents" = "With my life partner and in-laws",
+                          "Family beyond parents" = "Only with my life partner",
+                          "Parents" = "Only with my parents",
+                          "Family beyond parents" = "Other (please specify below)"))
+
+back_with_city <- bind_cols(background_dat, city)
+back_with_coll <- left_join(back_with_city, college, by = "ResponseId")
+
+back <- back_with_coll %>%
+  dplyr::select(ResponseId, caste, resp_gender, famsize, mother_edu, father_edu, living_with, area, Code, native_place) %>%
+  mutate_at(vars(c(Code, area)), factor) %>%
+  rename(city_dev = Code) %>%
+  rename(gender = resp_gender) %>%
+  rename(college_loc = area)
+
+background_dat %>%
+filter(!is.na(caste)) %>%
+ggplot(aes(x = caste,
+         fill = caste)) +
+geom_bar() +
+stat_count(geom = "text",
+         aes(label = stat(count)),
+        position = position_fill(vjust = 300), colour="black")
+
+dictionary <- labelled::generate_dictionary(back)
+dictionary
+
+recode_levelsa <- function(x) {
+  factor(x, levels = c("Small", "Medium", "Large"))
+}
+
+recode_levelsb <- function(x) {
+  factor(x, levels = c("Alone or with friends", "Parents", "Family beyond parents"))
+}
+
+recode_levelsc <- function(x) {
+  factor(x, levels = c("None or partial schooling", "10th or 12th complete", "Undergraduate", "Postgraduate"))
+}
+
+recode_levelsd <- function(x) {
+  factor(x, levels = c("Male", "Female"))
+}
+
+
+back <- back %>%
+  mutate_at(vars(4), recode_levelsa) %>%
+  mutate_at(vars(7), recode_levelsb) %>%
+  mutate_at(vars(5:6), recode_levelsc) %>%
+  mutate_at(vars(3), recode_levelsd)
+
+# saveRDS(back, file="background.Rda")
+
+
+background <- readRDS(file="background.Rda")
+
+library(tidyverse)
+library(knitr)
+
+# Prepare data
+background$gender <- as.character(background$gender)
+background$caste <- as.character(background$caste)
+background$famsize <- as.character(background$famsize)
+background$mother_edu <- as.character(background$mother_edu)
+background$living_with <- as.character(background$living_with)
+background$college_loc <- as.character(background$college_loc)
+background$city_dev <- as.character(background$city_dev)
+background$native_place <- as.character(background$native_place)
+
+# List of categorical variables
+cat_vars <- c("gender", "caste", "famsize", "mother_edu", "living_with", "college_loc", "city_dev", "native_place")
+
+# Function to calculate frequencies and percentages
+calc_freq_pct <- function(data, var) {
+  data %>%
+    mutate_at(var, forcats::fct_inorder) %>%  # update this line
+    group_by_at(var) %>%
+    summarise(n = n(), pct = n() / nrow(data) * 100) %>%
+    mutate(Variable = var) %>%
+    rename(Level = .data[[var]])
+}
+
+
+# Apply function to each categorical variable
+list_cat <- lapply(cat_vars, calc_freq_pct, data = background)
+
+# Combine results into one data frame
+df_cat <- bind_rows(list_cat)
+
+# Rename columns for better readability
+names(df_cat) <- c("Level", "N", "% or M (SD)", "Variable")
+
+# Order data frame by variable names
+df_cat <- df_cat[order(df_cat$Variable),]
+
+# Print table in markdown format
+df_cat %>%
+  dplyr::select(Variable, Level, N, `% or M (SD)`) %>%
+  knitr::kable("markdown", align = c("l", "l", "r", "r"))
+
+names(df_cat) <- c("Level", "Count", "Percentage", "Variable")
+
+
+library(kableExtra)
+
+df <- data.frame(
+  Variable = c("caste", "", "", "", "city_dev", "", "", "", "college_loc", "", 
+               "famsize", "", "", "", "father_edu", "", "", "", "", "",
+               "gender", "", "", "living_with", "", "", "", "mother_edu", "", "", "", "", "",
+               "native_place", "", ""),
+  Level = c("Brahmin", "Dalit", "Kshatriya and Vaishya", "OBC and ST", 
+            "X", "Y", "Z", "NA",
+            "metro", "non-metro",
+            "Large", "Medium", "Small", "NA",
+            "10th or 12th complete", "None", "Partial schooling", "Postgraduate", "Undergraduate", "NA",
+            "Female", "Male", "Non-binary / third gender",
+            "Alone or with friends", "Family beyond parents", "Parents", "NA",
+            "10th or 12th complete", "None", "Partial schooling", "Postgraduate", "Undergraduate", "NA",
+            "Metro or None", "Small town or city", "Village"),
+  N = c(90, 209, 134, 179, 251, 164, 194, 3, 193, 419, 55, 374, 95, 88,
+        188, 33, 63, 97, 225, 6, 296, 305, 11, 72, 166, 368, 6, 218, 54, 86, 70, 178, 6, 212, 249, 151),
+  `Percentage` = c(14.71, 34.15, 21.90, 29.25, 41.01, 26.80, 31.70, 0.49, 31.54, 68.46, 8.99, 61.11, 15.52, 14.38, 
+               30.72, 5.39, 10.29, 15.85, 36.76, 0.98, 48.37, 49.84, 1.80, 11.76, 27.12, 60.13, 0.98,
+               35.62, 8.82, 14.05, 11.44, 29.08, 0.98, 34.64, 40.69, 24.67),
+  stringsAsFactors = FALSE
+)
+
+# Using kableExtra to display the table with highlighted rows for variables
+df %>%
+  knitr::kable("html") %>%
+  kable_styling("striped") %>%
+  row_spec(which(df$Level == ""), background = "lightblue")
+
+class(background$mother_edu)
+
+# Assuming your data is in a data frame called 'df' with 'mother_edu' and 'father_edu' as factor variables
+contingency_table <- table(background$mother_edu, background$father_edu)
+
+# Print the contingency table
+print(contingency_table)
+
+# Perform a chi-squared test
+chi_squared_test <- chisq.test(contingency_table)
+
+# Print the results of the chi-squared test
+print(chi_squared_test)
+
+
+
+
+
+
+```
+
+Punishment data
+
+```{r fig_n2, fig.cap="Punishment question structure", fig.align='center'}
+knitr::include_graphics('Punishment_tab.png')
+```
+
+
+```{r}
+
+punishment <- test123 %>%
+  dplyr::select(8, 267:413)
+
+punishment_clean <- punishment %>%
+  mutate_all(~ ifelse(. == "Nothing bad would happen", 0, .)) %>%
+  dplyr::select(-f.sanc_dress_1, -f.sanc_pronoun_1, -f.sanc_swear_1, -f.sanc_casteslur_1,
+                -f.sanc_partnercaste_1, -f.sanc_partnerrel_1, -f.sanc_preg_1, -p.sanc_dress_1,
+                -p.sanc_pronoun_1, -p.sanc_swear_1, -p.sanc_casteslur_1, -p.sanc_partnercaste_1,
+                -p.sanc_partnerrel_1, -p.sanc_preg_1, -x.sanc_dress_1, -x.sanc_pronoun_1,
+                -x.sanc_swear_1, -x.sanc_casteslur_1, -x.sanc_partnercaste_1, -x.sanc_partnerrel_1,
+                -x.sanc_preg_1) %>%
+  rename(f_dress_shout = f.sanc_dress_2,
+         f_dress_nohang = f.sanc_dress_3,
+         f_dress_hit = f.sanc_dress_4,
+         f_dress_leavegroup = f.sanc_dress_13,
+         f_dress_peershame = f.sanc_dress_14,
+         f_dress_groupostricise = f.sanc_dress_15,
+         f_pronoun_shout = f.sanc_pronoun_2,
+         f_pronoun_nohang = f.sanc_pronoun_3,
+         f_pronoun_hit = f.sanc_pronoun_4,
+         f_pronoun_leavegroup = f.sanc_pronoun_13,
+         f_pronoun_peershame = f.sanc_pronoun_14,
+         f_pronoun_groupostricise = f.sanc_pronoun_15,
+         f_swear_shout = f.sanc_swear_2,
+         f_swear_nohang = f.sanc_swear_3,
+         f_swear_hit = f.sanc_swear_4,
+         f_swear_leavegroup = f.sanc_swear_13,
+         f_swear_peershame = f.sanc_swear_14,
+         f_swear_groupostricise = f.sanc_swear_15,
+         f_casteslur_shout = f.sanc_casteslur_2,
+         f_casteslur_nohang = f.sanc_casteslur_3,
+         f_casteslur_hit = f.sanc_casteslur_4,
+         f_casteslur_leavegroup = f.sanc_casteslur_13,
+         f_casteslur_peershame = f.sanc_casteslur_14,
+         f_casteslur_groupostricise = f.sanc_casteslur_15,
+         f_partnercaste_shout = f.sanc_partnercaste_2,
+         f_partnercaste_nohang = f.sanc_partnercaste_3,
+         f_partnercaste_hit = f.sanc_partnercaste_4,
+         f_partnercaste_leavegroup = f.sanc_partnercaste_13,
+         f_partnercaste_peershame = f.sanc_partnercaste_14,
+         f_partnercaste_groupostricise = f.sanc_partnercaste_15,
+         f_partnerrel_shout = f.sanc_partnerrel_2,
+         f_partnerrel_nohang = f.sanc_partnerrel_3,
+         f_partnerrel_hit = f.sanc_partnerrel_4,
+         f_partnerrel_leavegroup = f.sanc_partnerrel_13,
+         f_partnerrel_peershame = f.sanc_partnerrel_14,
+         f_partnerrel_groupostricise = f.sanc_partnerrel_15,
+         f_preg_shout = f.sanc_preg_2,
+         f_preg_nohang = f.sanc_preg_3,
+         f_preg_hit = f.sanc_preg_4,
+         f_preg_leavegroup = f.sanc_preg_13,
+         f_preg_peershame = f.sanc_preg_14,
+         f_preg_groupostricise = f.sanc_preg_15,
+         p_dress_shout = p.sanc_dress_2,
+         p_dress_notalk = p.sanc_dress_3,
+         p_dress_hit = p.sanc_dress_4,
+         p_dress_leavehome = p.sanc_dress_13,
+         p_dress_parentshame = p.sanc_dress_14,
+         p_dress_parentostricise = p.sanc_dress_15,
+         p_pronoun_shout = p.sanc_pronoun_2,
+         p_pronoun_notalk = p.sanc_pronoun_3,
+         p_pronoun_hit = p.sanc_pronoun_4,
+         p_pronoun_leavehome = p.sanc_pronoun_13,
+         p_pronoun_parentshame = p.sanc_pronoun_14,
+         p_pronoun_parentostricise = p.sanc_pronoun_15,
+         p_swear_shout = p.sanc_swear_2,
+         p_swear_notalk = p.sanc_swear_3,
+         p_swear_hit = p.sanc_swear_4,
+         p_swear_leavehome = p.sanc_swear_13,
+         p_swear_parentshame = p.sanc_swear_14,
+         p_swear_parentostricise = p.sanc_swear_15,
+         p_casteslur_shout = p.sanc_casteslur_2,
+         p_casteslur_notalk = p.sanc_casteslur_3,
+         p_casteslur_hit = p.sanc_casteslur_4,
+         p_casteslur_leavehome = p.sanc_casteslur_13,
+         p_casteslur_parentshame = p.sanc_casteslur_14,
+         p_casteslur_parentostricise = p.sanc_casteslur_15,
+         p_partnercaste_shout = p.sanc_partnercaste_2,
+         p_partnercaste_notalk = p.sanc_partnercaste_3,
+         p_partnercaste_hit = p.sanc_partnercaste_4,
+         p_partnercaste_leavehome = p.sanc_partnercaste_13,
+         p_partnercaste_parentshame = p.sanc_partnercaste_14,
+         p_partnercaste_parentostricise = p.sanc_partnercaste_15,
+         p_partnerrel_shout = p.sanc_partnerrel_2,
+         p_partnerrel_notalk = p.sanc_partnerrel_3,
+         p_partnerrel_hit = p.sanc_partnerrel_4,
+         p_partnerrel_leavehome = p.sanc_partnerrel_13,
+         p_partnerrel_parentshame = p.sanc_partnerrel_14,
+         p_partnerrel_parentostricise = p.sanc_partnerrel_15,
+         p_preg_shout = p.sanc_preg_2,
+         p_preg_notalk = p.sanc_preg_3,
+         p_preg_hit = p.sanc_preg_4,
+         p_preg_leavehome = p.sanc_preg_13,
+         p_preg_parentshame = p.sanc_preg_14,
+         p_preg_parentostricise = p.sanc_preg_15,
+         x_dress_shout = x.sanc_dress_2,
+         x_dress_noinvite = x.sanc_dress_3,
+         x_dress_hit = x.sanc_dress_4,
+         x_dress_leavehome = x.sanc_dress_13,
+         x_dress_parentshame = x.sanc_dress_14,
+         x_dress_relativesostricise = x.sanc_dress_15,
+         x_pronoun_shout = x.sanc_pronoun_2,
+         x_pronoun_noinvite = x.sanc_pronoun_3,
+         x_pronoun_hit = x.sanc_pronoun_4,
+         x_pronoun_leavehome = x.sanc_pronoun_13,
+         x_pronoun_parentshame = x.sanc_pronoun_14,
+         x_pronoun_relativesostricise = x.sanc_pronoun_15,
+         x_swear_shout = x.sanc_swear_2,
+         x_swear_noinvite = x.sanc_swear_3,
+         x_swear_hit = x.sanc_swear_4,
+         x_swear_leavehome = x.sanc_swear_13,
+         x_swear_parentshame = x.sanc_swear_14,
+         x_swear_relativesostricise = x.sanc_swear_15,
+         x_casteslur_shout = x.sanc_casteslur_2,
+         x_casteslur_noinvite = x.sanc_casteslur_3,
+         x_casteslur_hit = x.sanc_casteslur_4,
+         x_casteslur_leavehome = x.sanc_casteslur_13,
+         x_casteslur_parentshame = x.sanc_casteslur_14,
+         x_casteslur_relativesostricise = x.sanc_casteslur_15,
+         x_partnercaste_shout = x.sanc_partnercaste_2,
+         x_partnercaste_noinvite = x.sanc_partnercaste_3,
+         x_partnercaste_hit = x.sanc_partnercaste_4,
+         x_partnercaste_leavehome = x.sanc_partnercaste_13,
+         x_partnercaste_parentshame = x.sanc_partnercaste_14,
+         x_partnercaste_relativesostricise = x.sanc_partnercaste_15,
+         x_partnerrel_shout = x.sanc_partnerrel_2,
+         x_partnerrel_noinvite = x.sanc_partnerrel_3,
+         x_partnerrel_hit = x.sanc_partnerrel_4,
+         x_partnerrel_leavehome = x.sanc_partnerrel_13,
+         x_partnerrel_parentshame = x.sanc_partnerrel_14,
+         x_partnerrel_relativesostricise = x.sanc_partnerrel_15,
+         x_preg_shout = x.sanc_preg_2,
+         x_preg_noinvite = x.sanc_preg_3,
+         x_preg_hit = x.sanc_preg_4,
+         x_preg_leavehome = x.sanc_preg_13,
+         x_preg_parentshame = x.sanc_preg_14,
+         x_preg_relativesostricise = x.sanc_preg_15)
+
+
+punishment_clean <- punishment_clean %>%
+  mutate(across(-1, ~ifelse(grepl("\\D", as.character(.)), 1, 0)))
+
+names(punishment_clean)
+
+saveRDS(punishment_clean, file="punishment1.Rda")
+punish_clean <- readRDS(file="punishment1.Rda")
+
+dictionary_punish <- labelled::generate_dictionary(test123)
+dictionary_punish
+
+names(punish_clean)
+
+```
+
+
+```{r}
+
+f_dress <- punishment_clean %>%
+  dplyr::select(1:6)
+
+df_long <- f_dress %>%
+  pivot_longer(cols = starts_with("f"), names_to = "item", values_to = "response")
+
+# Calculate the proportions of "Yes" responses for each item
+proportions <- df_long %>%
+  count(item, response) %>%
+  group_by(item) %>%
+  mutate(proportion = n / sum(n) * 100) %>%
+  filter(response == 1) %>%
+  dplyr::select(item, proportion)
+
+# Plot the proportions using ggplot
+ggplot(proportions, aes(x = item, y = proportion, fill = item)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Item", y = "Proportion") +
+  ggtitle("Proportions of 'Yes' Responses for f_dress Variables")
+
+```
+
+
+```{r}
+library(tidyverse)
+
+# Define the variable groups manually
+variable_groups <- list(
+  f_dress = c("f_dress_shout", "f_dress_nohang", "f_dress_hit", 
+              "f_dress_leavegroup", "f_dress_peershame", "f_dress_groupostricise"),
+  f_pronoun = c("f_pronoun_shout", "f_pronoun_nohang", "f_pronoun_hit",
+                "f_pronoun_leavegroup", "f_pronoun_peershame", "f_pronoun_groupostricise"),
+  f_swear = c("f_swear_shout", "f_swear_nohang", "f_swear_hit", 
+              "f_swear_leavegroup", "f_swear_peershame", "f_swear_groupostricise"),
+  f_casteslur = c("f_casteslur_shout", "f_casteslur_nohang", "f_casteslur_hit", 
+                  "f_casteslur_leavegroup", "f_casteslur_peershame", "f_casteslur_groupostricise"),
+  f_partnercaste = c("f_partnercaste_shout","f_partnercaste_nohang", "f_partnercaste_hit", 
+                     "f_partnercaste_leavegroup", "f_partnercaste_peershame", "f_partnercaste_groupostricise"),
+  f_partnerrel = c("f_partnerrel_shout", "f_partnerrel_nohang", "f_partnerrel_hit", 
+                   "f_partnerrel_leavegroup", "f_partnerrel_peershame", "f_partnerrel_groupostricise"),
+  f_preg = c ("f_preg_shout", "f_preg_nohang", "f_preg_hit", 
+             "f_preg_leavegroup", "f_preg_peershame", "f_preg_groupostricise"),
+  p_dress = c("p_dress_shout", "p_dress_notalk", "p_dress_hit", 
+              "p_dress_leavehome", "p_dress_parentshame", "p_dress_parentostricise"),
+  p_pronoun = c("p_pronoun_shout", "p_pronoun_notalk", "p_pronoun_hit", 
+                "p_pronoun_leavehome", "p_pronoun_parentshame", "p_pronoun_parentostricise"),
+  p_swear = c("p_swear_shout", "p_swear_notalk", "p_swear_hit", 
+              "p_swear_leavehome", "p_swear_parentshame", "p_swear_parentostricise"),
+  p_casteslur = c("p_casteslur_shout", "p_casteslur_notalk", "p_casteslur_hit", 
+                  "p_casteslur_leavehome", "p_casteslur_parentshame", "p_casteslur_parentostricise"),
+  p_partnercaste = c("p_partnercaste_shout", "p_partnercaste_notalk", "p_partnercaste_hit", 
+                     "p_partnercaste_leavehome", "p_partnercaste_parentshame", "p_partnercaste_parentostricise"),
+  p_partnerrel = c("p_partnerrel_shout", "p_partnerrel_notalk", "p_partnerrel_hit", 
+                   "p_partnerrel_leavehome", "p_partnerrel_parentshame", "p_partnerrel_parentostricise"),
+  p_preg = c("p_preg_shout", "p_preg_notalk", "p_preg_hit", 
+             "p_preg_leavehome", "p_preg_parentshame", "p_preg_parentostricise"),
+  x_dress = c("x_dress_shout", "x_dress_noinvite", "x_dress_hit", 
+              "x_dress_leavehome", "x_dress_parentshame", "x_dress_relativesostricise"),
+  x_pronoun = c("x_pronoun_shout", "x_pronoun_noinvite", "x_pronoun_hit", 
+                "x_pronoun_leavehome", "x_pronoun_parentshame", "x_pronoun_relativesostricise"),
+  x_swear = c("x_swear_shout", "x_swear_noinvite", "x_swear_hit", 
+              "x_swear_leavehome", "x_swear_parentshame", "x_swear_relativesostricise"),
+  x_casteslur = c("x_casteslur_shout", "x_casteslur_noinvite", "x_casteslur_hit", 
+                  "x_casteslur_leavehome", "x_casteslur_parentshame", "x_casteslur_relativesostricise"),
+  x_partnercaste = c("x_partnercaste_shout", "x_partnercaste_noinvite", "x_partnercaste_hit", 
+                     "x_partnercaste_leavehome", "x_partnercaste_parentshame", "x_partnercaste_relativesostricise"),
+  x_partnerrel = c("x_partnerrel_shout", "x_partnerrel_noinvite", "x_partnerrel_hit", 
+                   "x_partnerrel_leavehome", "x_partnerrel_parentshame", "x_partnerrel_relativesostricise"),
+  x_preg = c("x_preg_shout", "x_preg_noinvite", "x_preg_hit", 
+             "x_preg_leavehome", "x_preg_parentshame", "x_preg_relativesostricise")
+)
+
+# Create plots for each variable group
+for (group in names(variable_groups)) {
+  # Filter the variables belonging to the current group
+  group_vars <- variable_groups[[group]]
+  
+  # Reshape the data into a longer format
+  df_long <- punishment_clean %>%
+    # dplyr::select(ResponseId, all_of(group_vars)) %>%
+    pivot_longer(cols = -ResponseId, names_to = "item", values_to = "response")
+  
+  # Calculate the proportions of "Yes" responses for each item
+  proportions <- df_long %>%
+    count(item, response) %>%
+    group_by(item) %>%
+    mutate(proportion = n / sum(n) * 100) %>%
+    filter(response == 1) %>%
+    dplyr::select(item, proportion)
+  
+  # # Modify the item labels for x-axis
+  # proportions$item <- gsub(".*_", "", proportions$item)
+  # 
+  # # Plot the proportions using ggplot
+  # plot_title <- paste("Proportions of 'Yes' Responses for", group)
+  # plot_filename <- paste("proportions_plot_", group, ".png", sep = "")
+  # 
+  # plot <- ggplot(proportions, aes(x = item, y = proportion, fill = item)) +
+  #   geom_bar(stat = "identity") +
+  #   labs(x = "Consequence", y = "Proportion (%)") +
+  #   ggtitle(plot_title) +
+  #   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+  # 
+  # # Save the plot as an image
+  # ggsave(plot_filename, plot = plot)
+}
+
+
+
+df <- proportions %>% 
+  # Split the item column into three new columns
+  separate(item, into = c("type", "item", "reaction"), sep = "_", remove = TRUE) %>% 
+  # Reshape the data to wide format
+  pivot_wider(names_from = reaction, values_from = proportion)
+
+df <- df %>%
+  mutate(group_ostricise = coalesce(groupostricise, parentostricise, relativesostricise)) %>%
+  dplyr::select(-groupostricise, -parentostricise, -relativesostricise) %>%
+  mutate(avoid = coalesce(nohang, notalk, noinvite)) %>%
+  dplyr::select(-nohang, -notalk, -noinvite) %>%
+  mutate(bringshame = coalesce(peershame, parentshame)) %>%
+  dplyr::select(-peershame, -parentshame) %>%
+  mutate(ostricise = coalesce(leavegroup, leavehome)) %>%
+  dplyr::select(-leavegroup, -leavehome)
+
+
+library(dplyr)
+
+sanc_prop <- df %>%
+  rename(audience = type, transgression = item) %>%
+  mutate(audience = factor(audience, levels = c("f", "p", "x")),
+         transgression = factor(transgression, levels = c("dress", "pronoun", "swear", "casteslur", "partnercaste", "partnerrel", "preg"))) %>%
+  arrange(transgression) %>%
+  mutate(across(where(is.numeric), ~sprintf("%.2f", .))) %>%
+  rename (`getting hit` = hit,
+          `getting shouted at` = shout,
+          `avoided by group` = avoid,
+          `bring shame upon larger group` = bringshame,
+          `individual ostracised` = ostricise,
+          `the entire group is ostracised` = group_ostricise) %>%
+  dplyr::select(1,2,4,6,3,8,7,5)
+
+
+defiance <- c("Inappropriate dressing",
+           "Inappropriate dressing",
+           "Inappropriate dressing",
+           "No pronouns of respect",
+           "No pronouns of respect",
+           "No pronouns of respect",
+           "Swear",
+           "Swear",
+           "Swear",
+           "Slurs",
+           "Slurs",
+           "Slurs",
+           "Intercaste romance",
+           "Intercaste romance",
+           "Intercaste romance",
+           "Inter religious romance",
+           "Inter religious romance",
+           "Inter religious romance",
+           "Pregnancy",
+           "Pregnancy",
+           "Pregnancy")
+
+sanction_prop <- sanc_prop %>%
+  dplyr::select(-transgression) %>%
+  mutate(transgression = defiance) %>%
+  dplyr::select(1,8,2:7)
+
+
+# Now the data should be in the format you want
+sanc_prop
+
+saveRDS(sanction_prop, file="proportions.Rda")
+
+prop <- readRDS("proportions.Rda")
+
+
+
+
+```
+
+
+
+
+
+```{r}
+
+library(cowplot)
+
+# FRIEND
+
+f_dress_tab <- punish_clean %>%
+  dplyr::select(1:7)
+result1 <- mirt(data = f_dress_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result1)
+coef(result1, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf1 <- tracePlot(result1, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Dressing inappropriately in front of your friends")
+  
+
+f_pronoun_tab <- punish_clean %>%
+  dplyr::select(1, 8:13)
+result2 <- mirt(data = f_pronoun_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result2, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf2 <- tracePlot(result2, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Not using pronouns of respect towards older people")
+
+
+f_swear_tab <- punish_clean %>%
+  dplyr::select(1, 14:19)
+result3 <- mirt(data = f_swear_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result3, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf3 <- tracePlot(result3, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using swear words in front of friends")
+
+
+f_casteslur_tab <- punish_clean %>%
+  dplyr::select(1, 20:25)
+result4 <- mirt(data = f_casteslur_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result4, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf4 <- tracePlot(result4, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using casteist/homophobic slurs in front of friends")
+
+
+f_partnercaste_tab <- punish_clean %>%
+  dplyr::select(1, 26:31)
+result5 <- mirt(data = f_partnercaste_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result5, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+coef(result5)
+plotf5 <- tracePlot(result5, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your friends find out that you have a partner from another caste")
+
+
+f_partnerrel_tab <- punish_clean %>%
+  dplyr::select(1, 32:37)
+result6 <- mirt(data = f_partnerrel_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result6, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf6 <- tracePlot(result6, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your friends find out that you have a partner from another religion")
+
+
+f_preg_tab <- punish_clean %>%
+  dplyr::select(1, 38:43)
+result7 <- mirt(data = f_preg_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result7, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotf7 <- tracePlot(result7, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your friends find out that you have made/are pregnant out of wedlock")
+
+
+friend_plot <- plot_grid(plotf1, plotf2, plotf3, plotf4, plotf5, plotf6, plotf7, ncol = 2)
+
+ggsave("friend_plot.png", height = 15, width = 15)
+
+# PARENT
+
+p_dress_tab <- punish_clean %>%
+  dplyr::select(1, 44:49)
+result8 <- mirt(data = p_dress_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result8, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp1 <- tracePlot(result8, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Dressing inappropriately in front of your parents")
+  
+
+p_pronoun_tab <- punish_clean %>%
+  dplyr::select(1, 50:55)
+result9 <- mirt(data = p_pronoun_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result9, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp2 <- tracePlot(result9, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Not using pronouns of respect towards older people in front of your parents")
+
+
+p_swear_tab <- punish_clean %>%
+  dplyr::select(1, 56:61)
+result10 <- mirt(data = p_swear_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result10, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp3 <- tracePlot(result10, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using swear words in front of parents")
+
+
+p_casteslur_tab <- punish_clean %>%
+  dplyr::select(1, 62:67)
+result11 <- mirt(data = p_casteslur_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result11, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp4 <- tracePlot(result11, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using casteist/homophobic slurs in front of parents")
+
+
+p_partnercaste_tab <- punish_clean %>%
+  dplyr::select(1, 68:73)
+result12 <- mirt(data = p_partnercaste_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result12, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+coef(result12)
+plotp5 <- tracePlot(result12, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your parents find out that you have a partner from another caste")
+
+
+p_partnerrel_tab <- punish_clean %>%
+  dplyr::select(1, 74:79)
+result13 <- mirt(data = p_partnerrel_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result13, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp6 <- tracePlot(result13, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your parents find out that you have a partner from another religion")
+
+
+p_preg_tab <- punish_clean %>%
+  dplyr::select(1, 80:85)
+result14 <- mirt(data = p_preg_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result14, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotp7 <- tracePlot(result14, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your parents find out that you have made/are pregnant out of wedlock")
+
+
+parent_plot <- plot_grid(plotp1, plotp2, plotp3, plotp4, plotp5, plotp6, plotp7, ncol = 2)
+
+ggsave("parent_plot.png", height = 15, width = 15)
+
+
+# ONLY EXTENDED
+
+x_dress_tab <- punish_clean %>%
+  dplyr::select(1, 86:91)
+result15 <- mirt(data = x_dress_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result15, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx1 <- tracePlot(result15, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Dressing inappropriately in front of your extended family")
+  
+
+x_pronoun_tab <- punish_clean %>%
+  dplyr::select(1, 92:97)
+result16 <- mirt(data = x_pronoun_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result16, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx2 <- tracePlot(result16, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Not using pronouns of respect towards older people in front of your extended family")
+
+
+x_swear_tab <- punish_clean %>%
+  dplyr::select(1, 98:103)
+result17 <- mirt(data = x_swear_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result17, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx3 <- tracePlot(result17, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using swear words in front of extended family")
+
+
+x_casteslur_tab <- punish_clean %>%
+  dplyr::select(1, 104:109)
+result18 <- mirt(data = x_casteslur_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result18, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx4 <- tracePlot(result18, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Using casteist/homophobic slurs in front of extended family")
+
+
+x_partnercaste_tab <- punish_clean %>%
+  dplyr::select(1, 110:115)
+result19 <- mirt(data = x_partnercaste_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+coef(result19)
+coef(result19, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx5 <- tracePlot(result19, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your extended family finds out that you have a partner from another caste")
+
+x_partnerrel_tab <- punish_clean %>%
+  dplyr::select(1, 116:121)
+result20 <- mirt(data = x_partnerrel_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result20, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx6 <- tracePlot(result20, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your extended family find out that you have a partner from another religion")
+
+
+x_preg_tab <- punish_clean %>%
+  dplyr::select(1, 122:127)
+result21 <- mirt(data = x_preg_tab[,-1], model = 1, SE = TRUE) #"1" specifies 1 trait
+
+coef(result21, simplify = TRUE)$items[,1:2] #A neat form of parameter estimates.
+
+plotx7 <- tracePlot(result21, facet = F, legend = T) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Your extended family find out that you have made/are pregnant out of wedlock")
+
+extended_plot <- plot_grid(plotx1, plotx2, plotx3, plotx4, plotx5, plotx6, plotx7, ncol = 2)
+print(extended_plot)
+
+ggsave("extended_plot.png", height = 15, width = 15)
+
+
+```
+
+
+
+```{r}
+
+lt_test <- punish_clean %>%
+   dplyr::select(x_preg_noinvite, x_preg_hit, x_preg_leavehome, x_preg_parentshame, x_preg_relativesostricise)
+
+fun <- mirt(lt_test, model = 1)
+
+est <- fscores(fun, method = "EAP")
+
+# 
+# 
+# # now, let us run this for the entire dataset
+# 
+# Extract unique prefixes from variable names
+var_names <- colnames(punish_clean)
+prefixes <- unique(sub("^(.*)_.*", "\\1", var_names))
+
+# Iterate through prefixes and create composite variables
+for (prefix in prefixes) {
+  # Skip the 'ResponseId' column
+  if (prefix != "ResponseId") {
+    # Select variables with the current prefix
+    lt_test <- punish_clean %>%
+      dplyr::select(starts_with(prefix))
+
+    # Run the latent trait model
+    latent_trait_model <- mirt(lt_test, model = 1)
+
+    # Estimate the latent trait (theta) for each respondent
+    theta_estimates <- fscores(latent_trait_model, method = "EAP")
+
+    # Add the theta estimates as a new variable to the original data frame
+    punish_clean[[paste0(prefix, "_composite")]] <- theta_estimates
+  }
+}
+
+punishment_comp <- punish_clean %>%
+dplyr::select (ResponseId, 
+f_dress_composite,
+f_pronoun_composite,
+f_swear_composite,
+f_casteslur_composite,
+f_partnercaste_composite,
+f_partnerrel_composite,
+f_preg_composite,
+p_dress_composite,
+p_pronoun_composite,
+p_swear_composite,
+p_casteslur_composite,
+p_partnercaste_composite,
+p_partnerrel_composite,
+p_preg_composite,
+x_dress_composite,
+x_pronoun_composite,
+x_swear_composite,
+x_casteslur_composite,
+x_partnercaste_composite,
+x_partnerrel_composite,
+x_preg_composite)
+
+# summary(punishment_comp)
+#
+# library(ggplot2)
+#
+# # Melt the dataset into a long format
+#
+# punishment_plot <- punish_clean %>%
+# dplyr::select (ResponseId, f_preg_composite, p_preg_composite, x_preg_composite)
+#
+# punishment_plot_long <- tidyr::gather(punishment_plot, key = "variable", value = "value", -ResponseId)
+#
+# # Plot the weighted composite variables
+# ggplot(punishment_plot_long, aes(x = variable, y = value)) +
+#   geom_boxplot() +
+#   labs(x = "Variable", y = "Weighted Composite Score", title = "Weighted Composite Variables")
+#
+# summary(punishment_plot)
+
+# # count the number of items in each cell separated by a comma
+# punishment_counts <- punish_clean %>%
+#   dplyr::select(-1) %>% # exclude the first column
+#   mutate_all(~ ifelse(. == 0, 0, str_count(., ",") + 1)) %>%
+#   mutate(ResponseId = punish_clean$ResponseId) %>% # add ResponseId column
+#   dplyr::select(ResponseId, everything())
+
+# display the result
+
+# saveRDS(punishment_comp, file="punishment2.Rda")
+punish_lt <- readRDS(file="punishment2.Rda")
+
+dictionary_punish <- labelled::generate_dictionary(punish_lt)
+dictionary_punish
+
+names(punish_lt)
+
+```
+
+
+```{r}
+
+selected_columns <- punish_lt[, 2:22]
+
+# Calculate the mean for each column
+mean_values <- colMeans(selected_columns, na.rm = TRUE)
+
+# Calculate the range for each column
+range_values <- apply(selected_columns, 2, range, na.rm = TRUE)
+
+# Create a data frame with variable names, mean, and range values
+result_table <- data.frame(
+  varname = names(mean_values),
+  mean = mean_values,
+  range_min = range_values[1, ],
+  range_max = range_values[2, ]
+)
+
+# Print the table using kable
+library(knitr)
+kable(result_table, caption = "Summary Statistics of Columns 2 to 22")
+
+
+```
+
+
+
+```{r}
+
+punish_reg <- left_join(punish_lt, background, by="ResponseId")
+
+punish_reg <- punish_reg %>%
+  filter(gender != "Non-binary / third gender")
+
+names(punish_reg)
+
+# List of response variables with names
+response_vars1 <- names(punish_reg)[2:8]
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars1)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars1[i], "~ caste*gender + famsize + living_with + mother_edu + college_loc + city_dev + native_place")), data = punish_reg)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")] # changed from Pr(>|z|)
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars1)) {
+    col_name_p <- paste(response_vars1[i], sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"])
+    )
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_p
+}
+
+# Filter out the threshold rows
+compiled_table1 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+new_values <- c(
+    "Intercept",
+    "SC/ST",
+    "Kshatriya",
+    "OBC",
+    "Vaishya",
+    "Female",
+    "Medium family size",
+    "Large family size",
+    "Living with family beyond parents",
+    "Mother education - 10th or 12th complete",
+    "Mother education - Undergraduate",
+    "Mother education - Postgraduate",
+    "College in non-metro",
+    "Cities Y",
+    "Cities Z",
+    "Native place in a small town or city",
+    "Native place in a village",
+    "SC/ST:Female",
+    "Kshatriya:Female",
+    "OBC:Female",
+    "Vaishya:Female"
+)
+
+friend_transgress <- compiled_table1 %>%
+  mutate(Term = new_values) %>%
+  rename(`Inappropriate dressing` = f_dress_composite) %>%
+  rename(`No pronouns of respect` = f_pronoun_composite) %>%
+  rename(`Swear` = f_swear_composite) %>%
+  rename(`Slurs` = f_casteslur_composite) %>%
+  rename(`Intercaste romance` = f_partnercaste_composite) %>%
+  rename(`Inter religious romance` = f_partnerrel_composite) %>%
+  rename(`Pregnancy` = f_preg_composite)
+
+# Print the final table without p-values in brackets
+print(compiled_table1)
+
+saveRDS(friend_transgress, file="transgress1.Rda")
+
+```
+
+```{r}
+
+library(stargazer)
+
+questions <- c(
+f_dress_composite = "Linear regressions for trangressions - friends and inappropriate dressing", 
+f_pronoun_composite = "Linear regressions for trangressions - friends and not using pronouns of respect", 
+f_swear_composite = "Linear regressions for trangressions - friends and using swear words", 
+f_casteslur_composite = "Linear regressions for trangressions - friends and using caste slurs", 
+f_partnercaste_composite = "Linear regressions for trangressions - friends find out about partner from another caste", 
+f_partnerrel_composite = "Linear regressions for trangressions - friends find out about partner from another religion",
+f_preg_composite = "Linear regressions for trangressions - friends find out about pregnancy",
+p_dress_composite = "Linear regressions for trangressions - parents and inappropriate dressing", 
+p_pronoun_composite = "Linear regressions for trangressions - parents and not using pronouns of respect", 
+p_swear_composite = "Linear regressions for trangressions - parents and using swear words",
+p_casteslur_composite = "Linear regressions for trangressions - parents and using caste slurs",
+p_partnercaste_composite = "Linear regressions for trangressions - parents find out about partner from another caste",
+p_partnerrel_composite = "Linear regressions for trangressions - parents find out about partner from another religion",
+p_preg_composite = "Linear regressions for trangressions - parents find out about pregnancy",
+x_dress_composite = "Linear regressions for trangressions - extended family and inappropriate dressing", 
+x_pronoun_composite = "Linear regressions for trangressions - extended family and not using pronouns of respect", 
+x_swear_composite = "Linear regressions for trangressions - extended family and using swear words",
+x_casteslur_composite = "Linear regressions for trangressions - extended family and using caste slurs",
+x_partnercaste_composite = "Linear regressions for trangressions - extended family find out about partner from another caste",
+x_partnerrel_composite = "Linear regressions for trangressions - extended family find out about partner from another religion",
+x_preg_composite = "Linear regressions for trangressions - extended family find out about pregnancy")
+
+names(punish_reg)
+
+outcomes <- colnames(punish_reg)[2:22]
+
+# Loop over outcomes, run the regression, and save stargazer tables to individual files
+for (outcome in outcomes) {
+  formula_string <- paste0(outcome, " ~ caste * gender + famsize + living_with + mother_edu + college_loc + city_dev + native_place")
+  model <- lm(formula_string, data = punish_reg)
+  
+  # Define filename based on outcome variable
+  filename <- paste0("transgress_", outcome, ".tex")
+  
+  # Get the corresponding question for this outcome
+  question <- questions[[outcome]]
+  
+  # Save stargazer output to file, adding the question as a title
+  covariate_labels=c("SC/ST", "Kshatriya","OBC","Vaishya","Female", "Medium family size", "Large family size", "Living with family beyond parents",
+                     "Mother education - 10th or 12th complete", "Mother education - Undergraduate", "Mother education - Postgraduate", "College in non-metro", "Cities Y", "Cities Z", 
+                     "Native place in a small town or city", "Native place in a village", "SC/ST*Female", "Kshatriya*Female", "OBC*Female", "Vaishya*Female", "Intercept")
+  
+  capture.output(stargazer(model, type = "latex", align = TRUE, single.row = TRUE, title = question, covariate.labels = covariate_labels, label = "tab:"), file = filename)
+}
+
+```
+
+
+```{r}
+# List of response variables with names
+response_vars2 <- names(punish_reg)[9:15]
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars2)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars2[i], "~ caste*gender + famsize + living_with + mother_edu + college_loc + city_dev + native_place")), data = punish_reg)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")] # changed from Pr(>|z|)
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars2)) {
+    col_name_p <- paste(response_vars2[i], sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"])
+    )
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_p
+}
+
+# Filter out the threshold rows
+compiled_table2 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+# Print the final table without p-values in brackets
+print(compiled_table2)
+
+parent_transgress <- compiled_table2 %>%
+  mutate(Term = new_values) %>%
+  rename(`Inappropriate dressing` = p_dress_composite) %>%
+  rename(`No pronouns of respect` = p_pronoun_composite) %>%
+  rename(`Swear` = p_swear_composite) %>%
+  rename(`Slurs` = p_casteslur_composite) %>%
+  rename(`Intercaste romance` = p_partnercaste_composite) %>%
+  rename(`Inter religious romance` = p_partnerrel_composite) %>%
+  rename(`Pregnancy` = p_preg_composite)
+
+# Print the final table without p-values in brackets
+print(parent_transgress)
+
+saveRDS(parent_transgress, file="transgress2.Rda")
+
+```
+
+
+
+
+```{r}
+
+
+names(punish_reg)
+
+# List of response variables with names
+response_vars3 <- names(punish_reg)[16:22]
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars3)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars3[i], "~ caste*gender + famsize + living_with + mother_edu + college_loc + city_dev + native_place")), data = punish_reg)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")] # changed from Pr(>|z|)
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars3)) {
+    col_name_p <- paste(response_vars3[i], sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"])
+    )
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_p
+}
+
+# Filter out the threshold rows
+compiled_table3 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+# Print the final table without p-values in brackets
+print(compiled_table3)
+
+extended_transgress <- compiled_table3 %>%
+  mutate(Term = new_values) %>%
+  rename(`Inappropriate dressing` = x_dress_composite) %>%
+  rename(`No pronouns of respect` = x_pronoun_composite) %>%
+  rename(`Swear` = x_swear_composite) %>%
+  rename(`Slurs` = x_casteslur_composite) %>%
+  rename(`Intercaste romance` = x_partnercaste_composite) %>%
+  rename(`Inter religious romance` = x_partnerrel_composite) %>%
+  rename(`Pregnancy` = x_preg_composite)
+
+# Print the final table without p-values in brackets
+print(extended_transgress)
+
+saveRDS(extended_transgress, file="transgress3.Rda")
+
+```
+
+
+
+```{r}
+
+names(punish_lt)
+
+summary(punish_lt)
+
+# Define a function to plot the three boxplots for a given composite type
+plot_composite <- function(composite_type) {
+  # Select the relevant columns
+  selected_data <- punish_lt %>%
+    dplyr::select(starts_with(paste(c("f_", "p_", "x_"), composite_type, sep = "")))
+  
+  # Reshape your data
+  long_data <- selected_data %>%
+    pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
+  
+  # Calculate summary statistics
+  summary_stats <- long_data %>%
+    group_by(variable) %>%
+    summarise(
+      sd = sd(value, na.rm = TRUE),
+      max = max(value, na.rm = TRUE),
+      q1 = quantile(value, 0.25, na.rm = TRUE),
+      q3 = quantile(value, 0.75, na.rm = TRUE)
+    )
+  
+  ggplot(long_data, aes(x = variable, y = value, fill = variable)) +
+    geom_boxplot() +
+    geom_text(data = summary_stats, aes(y = q1, label = paste("Q1 = ", round(q1, 2))), vjust = 1.5) +
+    geom_text(data = summary_stats, aes(y = q3, label = paste("Q3 = ", round(q3, 2))), vjust = -1.5) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "Variable", y = "Value", fill = "Variable", title = paste("Boxplot of", composite_type))
+}
+
+# Now you can call this function for each of your composite types
+plot_composite("dress_composite")
+plot_composite("pronoun_composite")
+plot_composite("swear_composite")
+plot_composite("casteslur_composite")
+plot_composite("partnercaste_composite")
+plot_composite("partnerrel_composite")
+plot_composite("preg_composite")
+
+summary(punish_lt)
+
+
+```
+
+
+```{r}
+
+# Define your plot_composite function as before
+
+# ...
+
+# List of all your composite types
+composite_types <- c("dress_composite", "pronoun_composite", "swear_composite", 
+                     "casteslur_composite", "partnercaste_composite", 
+                     "partnerrel_composite", "preg_composite")
+
+# Loop over composite_types and create and save each plot
+for(composite in composite_types) {
+  # Create the plot
+  plot <- plot_composite(composite)
+  
+  # Save the plot to a PNG file. The file name is based on the composite type.
+  ggsave(paste0(composite, ".png"), plot = plot, width = 10, height = 7, dpi = 300)
+}
+
+```
+
+
+
+
+RUNNING THE ANALYSIS
+
+STEP 1: Building towards the first CLMM models (friend vs parent AND friend vs extended)
+
+Prelim/set-up steps:
+a. Ok, I now want to create separate data frames for friend v/s parent and friend v/s extended to build towards the CLMM models
+Note to self: may make sense to combine this later but oh well, I am an inefficient coder. I'll live.
+
+```{r include=FALSE}
+survey_dat_friend_parent <- test123 %>%
+  filter(condition_parental_gaze == "1") %>% #only looking at friend vs parent
+  dplyr::select(8, 37:98, 110:177, 453:458) %>%
+  pivot_longer(cols = c(-ResponseId), names_to = "variable", values_to = "value") %>%
+  separate(variable, c("prefix", "variable"), sep = 2) %>%
+  mutate(condition = if_else(prefix == "mp", "p", "f")) %>%
+  dplyr::select(-prefix) %>%
+  rename_with(~ if_else(startsWith(., "."), substr(., 2, nchar(.)), .), -c(ResponseId, condition)) %>%
+  dplyr::select(ResponseId, condition, variable, value) %>%
+  pivot_wider(id_cols = c(ResponseId, condition), names_from = variable, values_from = value) %>%
+  mutate(g_r_marriageinf = coalesce(.g_r_marriageinf, .l_r_marriageinf)) %>%
+  dplyr::select(-c(.g_r_marriageinf, .l_r_marriageinf)) %>%
+  unite("c_traditionalclothing", c(b.c_clothing_1, g.c_clothing_1), sep = "") %>%
+  unite("c_interimclothing", c(b.c_clothing_2, g.c_clothing_2), sep = "") %>%
+  unite("c_modernclothing", c(b.c_clothing_3, g.c_clothing_3), sep = "") %>%
+  unite("np_traditionalclothing", c(b.np_clothing_1, g.np_clothing_1), sep = "") %>%
+  unite("np_interimclothing", c(b.np_clothing_2, g.np_clothing_2), sep = "") %>%
+  unite("np_modernclothing", c(b.np_clothing_3, g.np_clothing_3), sep = "") %>%
+  unite("c_caste_giveupseat", c(d.c_seating, nd.c_seating), sep = "") %>%
+  unite("c_caste_distance", c(d.c_distance, nd.c_distance), sep = "") %>%
+  unite("c_caste_rules", c(d.c_rules, nd.c_rules), sep = "") %>%
+  unite("np_caste_giveupseat", c(d.np_seating, nd.np_seating), sep = "") %>%
+  unite("np_caste_distance", c(d.np_distance, nd.np_distance), sep = "") %>%
+  unite("np_caste_rules", c(d.np_rules, nd.np_rules), sep = "") %>%
+  rename_with(~sub("^\\.", "", .), starts_with(".")) %>% 
+  mutate_at(vars(-1), factor) 
+
+
+dictionary1 <- labelled::generate_dictionary(survey_dat_friend_parent)
+dictionary1
+
+survey_dat_friend_extended <- test123 %>%
+  filter(condition_extended_family_gaze == "1") %>% #only looking at friend vs extended
+  dplyr::select(8, 37:98, 193:260, 453:458) %>%
+  pivot_longer(cols = c(-ResponseId), names_to = "variable", values_to = "value") %>%
+  separate(variable, c("prefix", "variable"), sep = 2) %>%
+  mutate(condition = if_else(prefix == "mx", "x", "f")) %>%
+  dplyr::select(-prefix) %>%
+  rename_with(~ if_else(startsWith(., "."), substr(., 2, nchar(.)), .), -c(ResponseId, condition)) %>%
+  dplyr::select(ResponseId, condition, variable, value) %>%
+  pivot_wider(id_cols = c(ResponseId, condition), names_from = variable, values_from = value) %>%
+  unite("c_traditionalclothing", c(b.c_clothing_1, g.c_clothing_1), sep = "") %>%
+  unite("c_interimclothing", c(b.c_clothing_2, g.c_clothing_2), sep = "") %>%
+  unite("c_modernclothing", c(b.c_clothing_3, g.c_clothing_3), sep = "") %>%
+  unite("np_traditionalclothing", c(b.np_clothing_1, g.np_clothing_1), sep = "") %>%
+  unite("np_interimclothing", c(b.np_clothing_2, g.np_clothing_2), sep = "") %>%
+  unite("np_modernclothing", c(b.np_clothing_3, g.np_clothing_3), sep = "") %>%
+  unite("c_caste_giveupseat", c(d.c_seating, nd.c_seating), sep = "") %>%
+  unite("c_caste_distance", c(d.c_distance, nd.c_distance), sep = "") %>%
+  unite("c_caste_rules", c(d.c_rules, nd.c_rules), sep = "") %>%
+  unite("np_caste_giveupseat", c(d.np_seating, nd.np_seating), sep = "") %>%
+  unite("np_caste_distance", c(d.np_distance, nd.np_distance), sep = "") %>%
+  unite("np_caste_rules", c(d.np_rules, nd.np_rules), sep = "") %>%
+  rename_with(~sub("^\\.", "", .), starts_with(".")) %>%
+  mutate_at(vars(-1), factor) 
+
+dictionary3 <- labelled::generate_dictionary(survey_dat_friend_extended)
+dictionary3
+
+```
+
+b. Recoding and releveling variables - functions
+
+```{r, include=FALSE}
+recode_levels1 <- function(x) {
+  factor(x, levels = c("Never", "Rarely", "Sometimes", "Often", "Always"))
+}
+
+
+recode_levels2 <- function(x) {
+  factor(x, levels = c("Not at all", "Very little", "Some", "A lot"))
+}
+
+recode_levels3 <- function(x) {
+  factor(x, levels = c("Not at all", "Very little", "Somewhat", "Quite a lot"))
+}
+
+
+recode_levels4 <- function(x) {
+  factor(x, levels = c("Fully disagree", "Somewhat disagree", "Somewhat agree", "Fully agree"))
+}
+
+recode_levels5 <- function(x) {
+  factor(x, levels = c("Right", "Somewhat right", "Can't say", "Wrong"))
+}
+
+recode_levels6 <- function(x) {
+  factor(x, levels = c("Often", "Sometimes", "Rarely", "Never"))
+}
+
+recode_levels7 <- function(x) {
+  factor(x, levels = c("Never", "Only on festivals", "Sometimes", "Regularly"))
+}
+
+recode_levels8 <- function(x) {
+  factor(x, levels = c("Always", "Often", "Sometimes", "Rarely", "Never"))
+}
+
+recode_levels9 <- function(x) {
+  factor(x, levels = c("Fully agree", "Somewhat agree", "Somewhat disagree", "Fully disagree"))
+}
+```
+
+c. Releveling and converting factors to ordered factors
+
+```{r, include=FALSE}
+survey_dat_friend_parent_fct <- survey_dat_friend_parent %>%
+  #mutate(condition = recode(condition, "f" = 0, "p" = 1)) %>%
+  mutate_at(vars(25, 44), recode_levels8) %>%
+  mutate_at(vars(27:38, 40:43, 46:57), recode_levels1) %>%
+  mutate_at(vars(6:8, 58), recode_levels2) %>%
+  mutate_at(vars(3:5), recode_levels3) %>%
+  mutate_at(vars(9), recode_levels9) %>%
+  mutate_at(vars(10:14), recode_levels4) %>%
+  mutate_at(vars(15:18), recode_levels5) %>%
+  mutate_at(vars(26, 39, 45), recode_levels6) %>%
+  mutate_at(vars(19:24), recode_levels7) %>%
+  mutate_at(vars(-condition, -ResponseId), list(~ as.ordered(.))) 
+
+dictionary2 <- labelled::generate_dictionary(survey_dat_friend_parent_fct)
+dictionary2
+
+
+survey_dat_friend_extended_fct <- survey_dat_friend_extended %>%
+  #mutate(condition = recode(condition, "f" = 0, "x" = 1)) %>%
+  mutate_at(vars(26, 45), recode_levels8) %>%
+  mutate_at(vars(28:39, 41:44, 47:58), recode_levels1) %>%
+  mutate_at(vars(6:9), recode_levels2) %>%
+  mutate_at(vars(3:5), recode_levels3) %>%
+  mutate_at(vars(10), recode_levels9) %>%
+  mutate_at(vars(11:15), recode_levels4) %>%
+  mutate_at(vars(16:19), recode_levels5) %>%
+  mutate_at(vars(27, 40, 46), recode_levels6) %>%
+  mutate_at(vars(20:25), recode_levels7) %>%
+  mutate_at(vars(-condition, -ResponseId), list(~ as.ordered(.))) 
+
+dictionary4 <- labelled::generate_dictionary(survey_dat_friend_extended_fct)
+dictionary4
+
+#saveRDS(survey_dat_friend_parent_fct, file="fp_fct.Rda")
+#saveRDS(survey_dat_friend_extended_fct, file="fx_fct.Rda")
+
+levels(survey_dat_friend_extended_fct$l_womenwork)
+
+```
+
+
+```{r}
+
+
+# survey_dat_friend_parent_fct <- as.data.frame(survey_dat_friend_parent_fct)
+# survey_dat_friend_extended_fct <- as.data.frame(survey_dat_friend_extended_fct)
+
+survey_dat_friend_parent_fct <- survey_dat_friend_parent_fct[, colnames(survey_dat_friend_extended_fct)]
+
+fpx_dat <- bind_rows(survey_dat_friend_parent_fct, survey_dat_friend_extended_fct)
+
+survey_dat_px <- fpx_dat %>%
+  filter (condition == "p" | condition == "x")
+
+saveRDS(survey_dat_px, file="px_fct.Rda")
+
+
+# creating an fpx data frame - NUMERIC
+
+# Define a function to convert ordered factors to numeric variables based on their scales
+convert_scale <- function(var) {
+  case_when(
+    # Scale 1: "Never", "Rarely", "Sometimes", "Often", "Always"
+    var == "Never" ~ 1,
+    var == "Rarely" ~ 2,
+    var == "Sometimes" ~ 3,
+    var == "Often" ~ 4,
+    var == "Always" ~ 5,
+    # Scale 2: "Not at all", "Very little", "Some", "A lot"
+    var == "Not at all" ~ 1,
+    var == "Very little" ~ 2,
+    var == "Some" ~ 3,
+    var == "A lot" ~ 4,
+    # Scale 3: "Not at all", "Very little", "Somewhat", "Quite a lot"
+    var == "Not at all" ~ 1,
+    var == "Very little" ~ 2,
+    var == "Somewhat" ~ 3,
+    var == "Quite a lot" ~ 4,
+    # Scale 4: "Fully disagree", "Somewhat disagree", "Somewhat agree", "Fully agree"
+    var == "Fully disagree" ~ 1,
+    var == "Somewhat disagree" ~ 2,
+    var == "Somewhat agree" ~ 3,
+    var == "Fully agree" ~ 4,
+    # Scale 5: "Right", "Somewhat right", "Can't say", "Wrong"
+    var == "Right" ~ 1,
+    var == "Somewhat right" ~ 2,
+    var == "Can't say" ~ 3,
+    var == "Wrong" ~ 4,
+    # Scale 6: "Never", "Rarely", "Sometimes", "Often"
+    var == "Never" ~ 1,
+    var == "Rarely" ~ 2,
+    var == "Sometimes" ~ 3,
+    var == "Often" ~ 4,
+    # Scale 7: "Never", "Only on festivals", "Sometimes", "Regularly"
+    var == "Never" ~ 1,
+    var == "Only on festivals" ~ 2,
+    var == "Sometimes" ~ 3,
+    var == "Regularly" ~ 4,
+    # Scale 8:"Always", Often, "Sometimes",...
+    var == "Always" ~ 1,
+    var == "Often" ~ 2,
+    var == "Sometimes" ~ 3,
+    var == "Rarely" ~ 4,
+    var == "Never" ~ 5,
+    # Scale 9: Often, "Sometimes",...
+    var == "Often" ~ 1,
+    var == "Sometimes" ~ 2,
+    var == "Rarely" ~ 3,
+    var == "Never" ~ 4,
+    # Scale 10: "Fully agree",...
+    var == "Fully agree" ~ 1,
+    var == "Somewhat agree" ~ 2,
+    var == "Somewhat disagree" ~ 3,
+    var == "Fully disagree" ~ 4,
+    # Return the original value if it doesn't match any of the above conditions
+    TRUE ~ as.numeric(var)
+  )
+}
+
+# Convert each ordered factor variable to a numeric variable based on their scales
+survey_dat_friend_parent_num <- survey_dat_friend_parent_fct %>% 
+  mutate_at(vars(-c(1:2)), ~ convert_scale(.))
+
+
+survey_dat_friend_extended_num <- survey_dat_friend_extended_fct %>% 
+  mutate_at(vars(-c(1:2)), ~ convert_scale(.))
+
+
+survey_dat_friend_parent_num <- survey_dat_friend_parent_num[, colnames(survey_dat_friend_extended_num)]
+
+fpx_dat_num <- bind_rows(survey_dat_friend_parent_num, survey_dat_friend_extended_num)
+
+survey_dat_px_num <- fpx_dat_num %>%
+  filter (condition == "p" | condition == "x")
+
+# change scores
+
+# Compute the change score for each variable
+change_fp <- survey_dat_friend_parent_num %>%
+  group_by(ResponseId) %>%
+  summarise(across(l_tradition:c_modernclothing, ~ .[condition == "p"] - .[condition == "f"]), .groups = "drop") %>%
+  mutate(treatment = as.factor("p"))
+
+change_fx <- survey_dat_friend_extended_num %>%
+  group_by(ResponseId) %>%
+  summarise(across(l_tradition:c_modernclothing, ~ .[condition == "x"] - .[condition == "f"]), .groups = "drop") %>%
+  mutate(treatment = as.factor("x"))
+
+
+
+
+# full data frames combining responses, background data of relevance and punishment latent trait vars
+
+# fp_dat <- left_join(survey_dat_friend_parent_fct, background, by = "ResponseId")
+# m1_dat <- left_join(fp_dat, punish_lt, by = "ResponseId")
+#  
+# m1_dat <- m1_dat %>%
+#   filter(gender != "Non-binary / third gender")
+# 
+# saveRDS(m1_dat, file="fp_sanc.Rda")
+fp_full <- readRDS(file="fp_sanc.Rda")
+
+# fx_dat <- left_join(survey_dat_friend_extended_fct, background, by = "ResponseId")
+# m2_dat <- left_join(fx_dat, punish_lt, by = "ResponseId")
+#  
+# m2_dat <- m2_dat %>%
+#    filter(gender != "Non-binary / third gender")
+# # 
+# # saveRDS(m2_dat, file="fx_sanc.Rda")
+fx_full <- readRDS(file="fx_sanc.Rda")
+
+
+# change scores
+
+cfp_partial <- left_join(change_fp, background, by = "ResponseId")
+cfp_full <- left_join(cfp_partial, punish_lt, by = "ResponseId")
+
+cfp_full <- cfp_full %>%
+  filter(gender != "Non-binary / third gender")
+
+cfx_partial <- left_join(change_fx, background, by = "ResponseId")
+cfx_full <- left_join(cfx_partial, punish_lt, by = "ResponseId")
+
+cfx_full <- cfx_full %>%
+  filter(gender != "Non-binary / third gender")
+
+cpx_full <- bind_rows(cfp_full, cfx_full)
+
+ recode_levels_p <- function(x) {
+  factor(x, levels = c("p", "x"))
+}
+
+cpx_full <- cpx_full %>%
+  mutate_at(vars(58), recode_levels_p) #save as rds if needed
+
+
+conservatism_p <- cfp_full[, 2:57]
+conservatism_p_means <- data.frame(
+  column = colnames(conservatism_p),
+  mean = sapply(conservatism_p, mean, na.rm = TRUE)
+)
+
+conservatism_p_means %>%
+  knitr::kable("markdown", caption = "Means of change scores")
+
+# saveRDS(conservatism_p_means, file="d1_cm.Rda")
+# d1_cm <- readRDS(file="d1_cm.Rda")
+
+conservatism_x <- cfx_full[, 2:57]
+conservatism_x_means <- data.frame(
+  column = colnames(conservatism_x),
+  mean = sapply(conservatism_x, mean, na.rm = TRUE)
+)
+
+conservatism_x_means %>%
+  knitr::kable("markdown", caption = "Means of change scores")
+
+# saveRDS(conservatism_x_means, file="d2_cm.Rda")
+# d2_cm <- readRDS(file="d2_cm.Rda")
+
+df <- data.frame(questions = questions,
+                 f_to_p = conservatism_p_means$mean,
+                 f_to_x = conservatism_x_means$mean)
+
+
+```
+
+
+
+```{r}
+questions <- c(
+  l_tradition = "Linear regressions on the effect of imagined scrutiny - worry about tradition",
+  l_famproblems = "Linear regressions on the effect of imagined scrutiny - worry about family problems",
+  g_famrep = "Linear regressions on the effect of imagined scrutiny - worry about family reputation",
+  l_p_careerinf = "Linear regressions on the effect of imagined scrutiny - parental influence on career",
+  g_r_careerinf = "Linear regressions on the effect of imagined scrutiny - extended family influence on career",
+  l_p_marriageinf = "Linear regressions on the effect of imagined scrutiny - parental influence on marriage",
+  g_r_marriageinf = "Linear regressions on the effect of imagined scrutiny - extended family influence on marriage",
+  l_beef = "Linear regressions on the effect of imagined scrutiny - tolerance towards eating beef",
+  l_womenwork = "Linear regressions on the effect of imagined scrutiny - women should not work after marriage",
+  l_wifelisten = "Linear regressions on the effect of imagined scrutiny - wives should always listen to their husbands",
+  l_girljeans = "Linear regressions on the effect of imagined scrutiny - Girls should not wear jeans",
+  g_firstname = "Linear regressions on the effect of imagined scrutiny - Women should not use husband's first name",
+  g_castefriend = "Linear regressions on the effect of imagined scrutiny - Caste matters in friendships",
+  l_marriagecaste = "Linear regressions on the effect of imagined scrutiny - are intercaste relationships right or wrong",
+  l_marriagerel = "Linear regressions on the effect of imagined scrutiny - are inter-religious relationships right or wrong",
+  l_livein = "Linear regressions on the effect of imagined scrutiny - are live-in relationships right or wrong",
+  l_dating = "Linear regressions on the effect of imagined scrutiny - is dating right or wrong",
+  l_puja = "How often do you do puja/namaz/prayer/path?",
+  l_bhajan = "How often do you do bhajan/kirtan/satsang?",
+  l_vrat = "How often do you keep vrats/upwaas/rozas/fasts?",
+  l_temple = "How often do you go to temple/mosque/church/gurudwara?",
+  l_relshows = "How often do you watch religious shows on TV?",
+  l_relbook = "How often do you read a religious book?",
+  c_hangout = "Linear regressions on the effect of imagined scrutiny - hangout with members of different gender in college",
+  c_nonveg = "Linear regressions on the effect of imagined scrutiny - eating non-vegetarian food (e.g., eggs, chicken, fish, etc.) in college",
+  c_caste_giveupseat = "Linear regressions on the effect of imagined scrutiny - practicing differential seating in college",
+  c_caste_distance = "Linear regressions on the effect of imagined scrutiny - maintaining physical distance from other caste groups in college",
+  c_caste_rules = "Linear regressions on the effect of imagined scrutiny - following general norms of caste in college",
+  c_feet = "Linear regressions on the effect of imagined scrutiny - touching the feet of older people in college",
+  c_oldrude = "Linear regressions on the effect of imagined scrutiny - staying silent when an old person is rude in college",
+  c_agree = "Linear regressions on the effect of imagined scrutiny - agreeing despite disagreement in college",
+  c_generalrules = "Linear regressions on the effect of imagined scrutiny - following general rules of behaviour in college",
+  h_pronouns = "Linear regressions on the effect of imagined scrutiny - using pronouns of respect to address older people at home",
+  h_feet = "Linear regressions on the effect of imagined scrutiny - touching the feet of older people at home",
+  h_oldrude = "Linear regressions on the effect of imagined scrutiny - staying silent when an old person is rude at home",
+  h_agree = "Linear regressions on the effect of imagined scrutiny - agreeing despite disagreement at home",
+  h_foodserve = "Linear regressions on the effect of imagined scrutiny - women serve men food at home",
+  h_nonveg = "Linear regressions on the effect of imagined scrutiny - eating non-vegetarian food (e.g., eggs, chicken, fish, etc.) at home",
+  h_generalrules = "Linear regressions on the effect of imagined scrutiny - following general rules of behaviour at home",
+  np_traditionalclothing = "Linear regressions on the effect of imagined scrutiny - wearing traditional clothing in the native place",
+  np_interimclothing = "Linear regressions on the effect of imagined scrutiny - wearing regular clothing in the native place",
+  np_modernclothing = "Linear regressions on the effect of imagined scrutiny - wearing modern clothing in the native place",
+  np_hangout = "Linear regressions on the effect of imagined scrutiny - hangout with members of different gender in the native place",
+  np_nonveg = "Linear regressions on the effect of imagined scrutiny - eating non-vegetarian food (e.g., eggs, chicken, fish, etc.) in the native place",
+  np_caste_giveupseat = "Linear regressions on the effect of imagined scrutiny - practicing differential seating in the native place",
+  np_caste_distance = "Linear regressions on the effect of imagined scrutiny - maintaining physical distance from other caste groups in the native place",
+  np_caste_rules = "Linear regressions on the effect of imagined scrutiny - following general norms of caste in the native place",
+  np_pronouns = "Linear regressions on the effect of imagined scrutiny - using pronouns of respect to address older people in the native place",
+  np_feet = "Linear regressions on the effect of imagined scrutiny - touching the feet of older people in the native place",
+  np_oldrude = "Linear regressions on the effect of imagined scrutiny - staying silent when an old person is rude in the native place",
+  np_agree = "Linear regressions on the effect of imagined scrutiny - agreeing despite disagreement in the native place",
+  np_foodserve = "Linear regressions on the effect of imagined scrutiny - women serve men food in the native place",
+  np_generalrules = "Linear regressions on the effect of imagined scrutiny - following general rules of behaviour in the native place",
+  c_traditionalclothing = "Linear regressions on the effect of imagined scrutiny - wearing traditional clothing in college",
+  c_interimclothing = "Linear regressions on the effect of imagined scrutiny - wearing regular clothing in college",
+  c_modernclothing = "Linear regressions on the effect of imagined scrutiny - wearing modern clothing in college"
+)
+
+names(cpx_full)
+length(questions)
+
+```
+
+
+
+```{r}
+# Load necessary library
+library(stargazer)
+library(texreg)
+
+names(cpx_full)
+
+# Assuming columns 2 to 58 of cpx_full are the outcome variables
+outcomes <- colnames(cpx_full)[2:57]
+
+# Loop over outcomes, run the regression, and save stargazer tables to individual files
+for (outcome in outcomes) {
+  formula_string <- paste0(outcome, " ~ treatment")
+  model <- lm(formula_string, data = cpx_full)
+  
+  # Define filename based on outcome variable
+  filename <- paste0("regression_result_for_", outcome, ".tex")
+  
+  # Get the corresponding question for this outcome
+  question <- questions[[outcome]]
+  
+  # Save stargazer output to file, adding the question as a title
+  capture.output(stargazer(model, type = "latex", align = TRUE, single.row = TRUE, title = question, covariate.labels = c("treatmentx" = "Extended Family Scrutiny"), dep.var.labels = " "), file = filename)
+}
+
+
+```
+
+
+```{r}
+
+library(texreg)
+
+questions <- c(
+g_famrep = "worry about family reputation",
+g_r_careerinf = "extended family influence on career",
+g_r_marriageinf = "extended family influence on marriage",
+h_oldrude = "staying silent when an old person is rude at home",
+np_oldrude = "staying silent when an old person is rude in the native place",
+np_agree = "agreeing despite disagreement in the native place",
+np_generalrules = "following general rules of behaviour in the native place")
+
+
+# Define the subset of variables of interest
+vars_of_interest <- c(
+  "g_famrep", "g_r_careerinf", "g_r_marriageinf",
+  "h_oldrude", "np_oldrude", "np_agree", "np_generalrules"
+)
+
+# Filter questions to keep only those of interest
+questions_of_interest <- questions[vars_of_interest]
+
+# List to store models
+model_list <- list()
+
+# Loop over the selected variables to fit models
+for (var in names(questions_of_interest)) {
+  # Construct the formula
+  formula_string <- as.formula(paste0(var, " ~ treatment"))
+  
+  # Fit the linear model
+  model <- lm(formula_string, data = cpx_full)
+  
+  # Add the fitted model to the list
+  model_list[[var]] <- model
+}
+
+stargazer(model_list, 
+          type = "html", # or "latex" or "html" for different output formats
+          title = "Parent versus Extended Family Scrutiny - Select Results",
+          colnames = FALSE,
+          model.numbers = FALSE,
+          dep.var.caption = " ",
+          column.labels = c("worry fam rep", "extended influence career", "extended influence marriage",
+                            "old rude home", "old rude native place",
+                            "agreeing native place", "following rules native place"),
+          keep.stat = c("rsq", "f"),
+          notes.align = "l",
+          covariate.labels = c("Extended Family Scrutiny", "Constant"),
+          out = "table1.html") # Save to a .tex file, change as needed
+
+
+
+
+texreg(model_list, 
+       file = "Parent versus Extended Family Scrutiny - Select Results",
+       custom.model.names = questions,
+       float.pos = "ht",
+       caption = "Joint Regression Results",
+       label = "tab:joint_regression_results")
+
+reg_table_output <- knitreg(model_list, custom.model.names = questions_of_interest)
+
+# Assuming reg_table_output contains the output from knitreg
+saveRDS(reg_table_output, file="sedm_reg.Rda")
+
+
+library(pander)
+
+pander(reg_table_output)
+
+```
+
+
+
+
+BAKWAAS
+
+```{r}
+
+calc <- cfp_full %>%
+  dplyr::select(treatment, c_caste_giveupseat, famsize) %>%
+  dplyr::group_by(famsize) %>%
+  dplyr::summarise(mean_c_caste_giveupseat = mean(c_caste_giveupseat, na.rm = TRUE))
+
+
+
+print(calc)
+
+avg_x <- calc %>%
+  filter(treatment == "x") %>%
+  pull(l_tradition) %>%
+  na.omit() %>%
+  mean(na.rm = TRUE)
+
+# Calculate average for l_tradition scores for treatment = p
+avg_p <- calc %>%
+  filter(treatment == "p") %>%
+  pull(l_tradition) %>%
+  na.omit() %>%
+  mean(na.rm = TRUE)
+
+# Calculate the difference: avg for l_tradition x - l_tradition p
+difference <- avg_x - avg_p
+
+# Print the results
+cat("Average for treatment x:", avg_x, "\n")
+cat("Average for treatment p:", avg_p, "\n")
+cat("Difference: l_tradition x - l_tradition p:", difference, "\n")
+
+
+```
+
+# Intercept only model
+
+```{r}
+
+dictionary2 <- labelled::generate_dictionary(survey_dat_friend_parent_fct)
+dictionary2
+
+
+# response_vars3 <- names(cfp_full)[2:57]
+# # create an empty data frame to store the results
+# results_table <- data.frame()
+# 
+# options(warn = 2)
+# 
+# # run a loop to fit a model for each response variable and store the results
+# for (i in 1:length(response_vars3)) {
+#   print(paste0("processing variable ", response_vars3[i]))
+#   model <- lm(as.formula(paste(response_vars3[i], "~ 1")), data = cfp_full)
+#   results <- tidy(model, conf.int = TRUE) %>%
+#     dplyr::select(estimate, conf.low, conf.high, p.value) %>%
+#     mutate(response_var = response_vars3[i])
+# 
+# 
+#   results_table <- bind_rows(results_table, results)
+# }
+# 
+# tab <- as_tibble(results_table) %>%
+#   mutate(p.value = str_remove_all(p.value, "\\*")) %>%
+#   mutate(p.value = as.numeric(p.value)) %>%
+#   mutate(significance = ifelse(p.value < (0.05), TRUE, FALSE)) %>%
+#   print(n = 60)
+# 
+# fp_in <- tab %>%
+#   dplyr::select(5,1:4,6)
+# 
+# saveRDS(fp_in, file="fp_intercept.Rda")
+fpi <- readRDS(file="fp_intercept.Rda")
+
+
+
+# response_vars3 <- names(cfp_full)[2:57]
+# # create an empty data frame to store the results
+# results_table <- data.frame()
+# 
+# options(warn = 2)
+# 
+# # run a loop to fit a model for each response variable and store the results
+# for (i in 1:length(response_vars3)) {
+#   print(paste0("processing variable ", response_vars3[i]))
+#   model <- lm(as.formula(paste(response_vars3[i], "~ 1")), data = cfx_full)
+#   results <- tidy(model, conf.int = TRUE) %>% 
+#     dplyr::select(estimate, conf.low, conf.high, p.value) %>%
+#     mutate(response_var = response_vars3[i])
+# 
+# 
+#   results_table <- bind_rows(results_table, results)
+# }
+# 
+# tab <- as_tibble(results_table) %>%
+#   mutate(p.value = str_remove_all(p.value, "\\*")) %>%
+#   mutate(p.value = as.numeric(p.value)) %>%
+#   mutate(significance = ifelse(p.value < (0.05), TRUE, FALSE)) %>%
+#   print(n = 60)
+# 
+# fx_in <- tab %>%
+#   dplyr::select(5,1:4,6)
+# 
+# saveRDS(fx_in, file="fx_intercept.Rda")
+fxi <- readRDS(file = "fx_intercept.Rda")
+
+
+```
+
+
+
+
+
+worry about tradition and reputation - MODEL
+
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("l_tradition", "l_famproblems", "g_famrep")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ gender*caste")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")] # changed from Pr(>|z|)
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ gender*caste")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars)) {
+    col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+    col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+}
+
+# Filter out the threshold rows
+compiled_tablex <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+# saveRDS(compiled_table4, file="m1_1.Rda")
+# t1 <- readRDS(file="m1_1.Rda")
+
+# Create a summary table using stargazer
+stargazer(compiled_tablex,
+          title = "Linear regression (lm) results on change scores for p-f (p) and x-f (x)",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+family influence over career and marriage
+
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("l_p_careerinf", "g_r_careerinf", "l_p_marriageinf", "g_r_marriageinf")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ gender * caste")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ gender * caste")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars)) {
+    col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+    col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+}
+
+# Filter out the threshold rows
+compiled_tabley <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+# 
+# saveRDS(compiled_table5, file="m1_2.Rda")
+# t2 <- readRDS(file="m1_2.Rda")
+
+# Create a summary table using stargazer
+stargazer(compiled_tabley,
+          title = "Linear regression (lm) results on change scores for p-f (p) and x-f (x)",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+norms around gender and caste
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("l_womenwork", "l_wifelisten", "l_girljeans", "g_firstname", "g_castefriend", "l_beef")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars)) {
+    col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+    col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+}
+
+# Filter out the threshold rows
+compiled_table6 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+
+t3 <- compiled_table6 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t3, file="rq2_1.Rda")
+rq2_1 <- readRDS(file="rq2_1.Rda")
+
+rq2_1s <- rq2_1 %>%
+  dplyr::select(Term, `l_beef (p)`)
+
+
+# Create a summary table using stargazer
+stargazer(rq2_1s,
+          title = "Combined Results of LM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+saveRDS(rq2_1s, file="rq2_1s.Rda")
+
+
+```
+
+moral judgements towards romantic relationships
+
+
+```{r}
+
+#List of response variables with names
+response_vars <- c("l_marriagecaste", "l_marriagerel", "l_livein", "l_dating")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+    stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+    return(paste0(round(estimate, 3), stars))
+}
+
+# Compile the summary tables into a data frame
+compiled_table <- data.frame(
+    Term = rownames(summary_tables_p[[1]])
+)
+
+# Add compiled columns for each response variable
+for (i in 1:length(response_vars)) {
+    col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+    col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    compiled_table <- cbind(
+        compiled_table,
+        paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+    )
+    colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+    colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+}
+
+# Filter out the threshold rows
+compiled_table7 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t4 <- compiled_table7 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t4, file="rq2_2.Rda")
+rq2_2 <- readRDS(file="rq2_2.Rda")
+
+# Create a summary table using stargazer
+stargazer(rq2_2,
+          title = "Combined Results of LM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+RELIGIOUS ENACTMENT
+
+
+```{r}
+
+# # List of response variables with names
+# response_vars <- c("l_puja", "l_bhajan", "l_vrat", "l_temple", "l_relshows", "l_relbook")
+# 
+# # Lists to store the summary tables
+# summary_tables_p <- list()
+# summary_tables_x <- list()
+# 
+# # Loop for condition p
+# for (i in 1:length(response_vars)) {
+#     # Fit the model for condition p
+#     model <- lm(as.formula(paste(response_vars[i], "~ gender * caste + famsize + living_with")), data = cfp_full)
+#     # Extract the summary table
+#     summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+#     # Store the summary table in the list
+#     summary_tables_p[[i]] <- summary_table
+# }
+# 
+# # Loop for condition x
+# for (i in 1:length(response_vars)) {
+#     # Fit the model for condition x
+#     model <- lm(as.formula(paste(response_vars[i], "~ gender * caste + famsize + living_with")), data = cfx_full)
+#     # Extract the summary table
+#     summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+#     # Store the summary table in the list
+#     summary_tables_x[[i]] <- summary_table
+# }
+# 
+# # Function to format estimates with stars based on p-value
+# format_estimate <- function(estimate, p_value) {
+#     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+#     return(paste0(round(estimate, 3), stars))
+# }
+# 
+# # Compile the summary tables into a data frame
+# compiled_table <- data.frame(
+#     Term = rownames(summary_tables_p[[1]])
+# )
+# 
+# # Add compiled columns for each response variable
+# for (i in 1:length(response_vars)) {
+#     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+#     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+# 
+#     compiled_table <- cbind(
+#         compiled_table,
+#         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+#     )
+#     compiled_table <- cbind(
+#         compiled_table,
+#         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+#     )
+#     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+#     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+# }
+# 
+# # Filter out the threshold rows
+# compiled_table8 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+# 
+# saveRDS(compiled_table8, file="m1_5.Rda")
+t5 <- readRDS(file="m1_5.Rda")
+
+# Create a summary table using stargazer
+stargazer(t5,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+
+```{r}
+
+sanc <- data.frame(ResponseId = px_sem_punish$ResponseId,
+                       friend_sanction = friend_sanction,
+                       parent_sanction = parent_sanction,
+                       extended_sanction = extended_sanction)
+
+mabaap <- left_join(cfp_full, sanc, by = "ResponseId")
+
+rishtedaar <- left_join(cfx_full, sanc, by = "ResponseId")
+
+
+```
+
+
+
+COLLEGE A
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("c_hangout", "c_caste_giveupseat", "c_feet", "c_oldrude", "c_agree", "c_generalrules")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+ compiled_table9 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+ 
+ t6 <- compiled_table9 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+saveRDS(t6, file="rq2_3.Rda")
+rq2_3 <- readRDS(file="rq2_3.Rda")
+
+rq2_3s <- rq2_3 %>%
+  dplyr::select(Term, `c_hangout (x)`, `c_feet (p)`, `c_agree (p)`)
+
+# Create a summary table using stargazer
+stargazer(rq2_3s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+COLLEGE B
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("c_caste_distance", "c_caste_rules")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table10 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t7 <- compiled_table10 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+saveRDS(t7, file="rq2_4.Rda")
+rq2_4 <- readRDS(file="rq2_4.Rda")
+
+
+# Create a summary table using stargazer
+stargazer(rq2_4,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+COLLEGE C
+
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("c_traditionalclothing", "c_interimclothing", "c_modernclothing")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table11 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t8 <- compiled_table11 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+saveRDS(t8, file="rq2_5.Rda")
+rq2_5 <- readRDS(file="rq2_5.Rda")
+
+rq2_5s <- rq2_5 %>%
+  dplyr::select(Term, `c_interimclothing (x)`)
+
+
+# Create a summary table using stargazer
+stargazer(rq2_5s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+rq2_c_s <- left_join(rq2_3s, rq2_5s, by="Term")
+
+saveRDS(rq2_c_s, file="rq2_c_s.Rda")
+
+rq2_c_s <- readRDS(file="rq2_c_s.Rda")
+
+
+```
+
+HOME A
+
+
+```{r}
+
+# # List of response variables with names
+response_vars <- c("h_pronouns", "h_oldrude", "h_agree")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table12 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t9 <- compiled_table12 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+saveRDS(t9, file="rq2_6.Rda")
+rq2_6 <- readRDS(file="rq2_6.Rda")
+
+rq2_6s <- rq2_6 %>%
+  dplyr::select(Term, `h_oldrude (x)`, `h_agree (p)`)
+
+
+# Create a summary table using stargazer
+stargazer(rq2_6s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+HOME B
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("h_feet", "h_foodserve", "h_generalrules")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table13 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t10 <- compiled_table13 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+saveRDS(t10, file="rq2_7.Rda")
+rq2_7 <- readRDS(file="rq2_7.Rda")
+
+rq2_7s <- rq2_7 %>%
+  dplyr::select(Term, `h_feet (p)`, `h_generalrules (x)`)
+
+# Create a summary table using stargazer
+stargazer(rq2_h_s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+rq2_h_s <- left_join(rq2_6s, rq2_7s, by="Term")
+
+saveRDS(rq2_h_s, file="rq2_h_s.Rda")
+rq2_h_s <- readRDS(file="rq2_h_s.Rda")
+
+
+```
+
+NATIVE PLACE A
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("np_traditionalclothing", "np_interimclothing", "np_modernclothing")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table14 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t11 <- compiled_table14 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t11, file="rq2_8.Rda")
+rq2_8 <- readRDS(file="rq2_8.Rda")
+
+rq2_8s <- rq2_8 %>%
+  dplyr::select(Term, `np_modernclothing (p)`)
+
+# Create a summary table using stargazer
+stargazer(rq2_8s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+NATIVE PLACE B
+
+```{r}
+
+names(fp_full)
+
+
+# List of response variables with names
+response_vars <- c("np_hangout", "np_caste_distance", "np_caste_rules")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table15 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t12 <- compiled_table15 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t12, file="rq2_9.Rda")
+rq2_9 <- readRDS(file="rq2_9.Rda")
+
+rq2_9s <- rq2_9 %>%
+  dplyr::select(Term, `np_caste_rules (x)`)
+
+# Create a summary table using stargazer
+stargazer(rq2_9s,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+
+NATIVE PLACE C
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("np_pronouns", "np_oldrude", "np_agree")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table16 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t13 <- compiled_table16 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t13, file="rq2_10.Rda")
+rq2_10 <- readRDS(file="rq2_10.Rda")
+
+# Create a summary table using stargazer
+stargazer(rq2_10,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+```
+
+
+NATIVE PLACE D
+
+```{r}
+
+# List of response variables with names
+response_vars <- c("np_caste_giveupseat", "np_feet", "np_foodserve", "np_generalrules")
+
+# Lists to store the summary tables
+summary_tables_p <- list()
+summary_tables_x <- list()
+
+# Loop for condition p
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition p
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfp_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_p[[i]] <- summary_table
+}
+
+# Loop for condition x
+for (i in 1:length(response_vars)) {
+    # Fit the model for condition x
+    model <- lm(as.formula(paste(response_vars[i], "~ caste*gender")), data = cfx_full)
+    # Extract the summary table
+    summary_table <- summary(model)$coefficients[, c("Estimate", "Pr(>|t|)")]
+    # Store the summary table in the list
+    summary_tables_x[[i]] <- summary_table
+}
+
+# Function to format estimates with stars based on p-value
+format_estimate <- function(estimate, p_value) {
+     stars <- ifelse(p_value < 0.001, "***", ifelse(p_value < 0.01, "**", ifelse(p_value < 0.05, "*", "")))
+     return(paste0(round(estimate, 3), stars))
+ }
+
+# Compile the summary tables into a data frame
+ compiled_table <- data.frame(
+     Term = rownames(summary_tables_p[[1]])
+ )
+
+
+# Add compiled columns for each response variable
+ for (i in 1:length(response_vars)) {
+     col_name_p <- paste(response_vars[i], "(p)", sep = " ")
+     col_name_x <- paste(response_vars[i], "(x)", sep = " ")
+
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_p[[i]][, "Estimate"], summary_tables_p[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_p[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     compiled_table <- cbind(
+         compiled_table,
+         paste0(format_estimate(summary_tables_x[[i]][, "Estimate"], summary_tables_x[[i]][, "Pr(>|t|)"]), " (", formatC(summary_tables_x[[i]][, "Pr(>|t|)"], digits = 3, format = "f"), ")")
+     )
+     colnames(compiled_table)[ncol(compiled_table)-1] <- col_name_p
+     colnames(compiled_table)[ncol(compiled_table)] <- col_name_x
+ }
+
+# Filter out the threshold rows
+compiled_table17 <- compiled_table[!grepl("\\|", compiled_table$Term), ]
+
+t14 <- compiled_table17 %>%
+  mutate(
+    Term = case_when(
+      Term == "(Intercept)" ~ "Intercept",
+      Term == "casteDalit" ~ "Dalit",
+      Term == "casteKshatriya and Vaishya" ~ "Kshatriya and Vaishya",
+      Term == "casteOBC and ST" ~ "OBC and ST",
+      Term == "genderMale" ~ "Male",
+      Term == "casteDalit:genderMale" ~ "Dalit*Male",
+      Term == "casteKshatriya and Vaishya:genderMale" ~ "Kshatriya and Vaishya*Male",
+      Term == "casteOBC and ST:genderMale" ~ "OBC and ST*Male",
+      TRUE ~ Term # This leaves all other values the same
+    )
+  )
+
+
+saveRDS(t14, file="rq2_11.Rda")
+rq2_11 <- readRDS(file="rq2_11.Rda")
+
+rq2_11s <- rq2_11 %>%
+  dplyr::select(Term, `np_feet (p)`, `np_foodserve (p)`, `np_foodserve (x)`)
+
+# Create a summary table using stargazer
+stargazer(rq2_11,
+          title = "Combined Results of CLMM Analysis for Condition p and x when compared to baseline",
+          label = "tab:combined_clmm_results",
+          summary = FALSE,
+          align = TRUE,
+          font.size = "small",
+          header = FALSE,
+          digits = 3,
+          type = "text") # Change to "latex" if you want LaTeX code
+
+
+rq2_n_s <- left_join(rq2_11s, rq2_9s, rq2_8s, by="Term")
+
+saveRDS(rq2_n_s, file="rq2_n_s.Rda")
+rq2_n_s <- readRDS(file="rq2_n_s.Rda")
+
+
+```
+
+
+
+Step 2: PARENT VERSUS EXTENDED
+
+A linear regression and a Wilcoxon test are both statistical tests used to assess differences between groups, but they differ in their assumptions and the type of data they analyze. A linear regression is a parametric test that assumes a linear relationship between the predictor variable (in this case, treatment type) and the outcome variable (responses to the variable under p or x). It also assumes that the residuals (the difference between the predicted and observed values) are normally distributed and have equal variance across all levels of the predictor variable. The linear regression estimates the effect of the predictor variable on the outcome variable while controlling for other potential confounding factors.
+
+On the other hand, a Wilcoxon test is a non-parametric test that does not assume a specific distribution of the data. It is used to compare the median values of two groups and assesses whether the observations in one group tend to be higher or lower than the observations in the other group. It does not assume a linear relationship between the predictor and outcome variables, and does not control for other potential confounding factors.
+
+Therefore, if you have a continuous outcome variable (which I don't really have since i'm using change scores) and are interested in estimating the effect of a predictor variable while controlling for other potential confounding factors, a linear regression would be an appropriate test to use. If you have a non-normally distributed outcome variable or do not have a continuous outcome variable, or if you are interested in comparing the medians of two groups rather than estimating a linear effect of the predictor variable, a Wilcoxon test may be more appropriate.
+
+
+MULTI-GROUP SEMS
+
+
+STEPS FOR MULTI-GROUP SEMS
+
+Use Jouni's notes to establish that there is no need to be concerned about invariance.
+
+
+```{r}
+
+px_sem_punish <- left_join(survey_dat_px, punish_lt, by = "ResponseId")
+
+px_sem_punish <- px_sem_punish %>%
+  mutate(condition = as.character(condition)) %>%
+  mutate(condition = fct_recode(condition, "parent" = "p",
+                                "extended" = "x"))
+
+dictionarysem <- labelled::generate_dictionary(px_sem_punish)
+dictionarysem
+
+saveRDS(px_sem_punish, file="px_punish.Rda")
+px_sem_punish <- readRDS("px_punish.Rda")
+
+px_sem_punish_num <- left_join(survey_dat_px_num, punish_lt, by = "ResponseId")
+
+px_sem_punish_num <- px_sem_punish_num %>%
+  mutate(condition = as.character(condition)) %>%
+  mutate(condition = fct_recode(condition, "parent" = "p",
+                                "extended" = "x"))
+
+saveRDS(px_sem_punish_num, file="px_punish_num.Rda")
+px_sem_punish_num <- readRDS("px_punish_num.Rda")
+
+
+```
+
+
+How am I going to operationalise/measure sanctions?
+
+I want to combine the parent/extended/friend sanction indicators somehow...
+
+Assigning weights based on your own judgment can be subjective and arbitrary. A more robust way to assign weights to the variables is to use a statistical method such as factor analysis or principal component analysis. Factor analysis and principal component analysis are multivariate techniques that can be used to identify underlying patterns or factors in a set of variables. In the context of creating a composite variable, these techniques can be used to identify which variables are most strongly related to the underlying construct of interest, and to assign weights based on their factor loadings.
+
+Steps:
+
+- Examine the factor loadings to determine which variables are most strongly related to the underlying construct. 
+- Assign weights to each variable based on their factor loadings. For example, you could assign weights equal to the absolute value of the factor loadings, or you could assign weights based on some other criteria, such as the size of the factor loadings relative to the other variables.
+- Multiply each variable by its weight to create a weighted score for each variable, and sum up the weighted scores to create the composite variable.
+- By using factor analysis to assign weights to the variables, I skip the need for subjective judgement
+
+
+```{r, include=FALSE}
+# I want to do something with punishment and I think I can create a composite variable using factor analysis
+
+# Create a data frame with the variables of interest FRIEND
+data_fsanc <- data.frame(f_dress_composite = px_sem_punish$f_dress_composite, 
+                         f_pronoun_composite = px_sem_punish$f_pronoun_composite, 
+                         f_partnercaste_composite = px_sem_punish$f_partnercaste_composite, 
+                         f_partnerrel_composite = px_sem_punish$f_partnerrel_composite)
+                         #f_preg_composite = px_sem_punish$f_preg_composite)
+
+
+# Conduct a factor analysis 
+fa_fsanc <- fa(data_fsanc, nfactors = 1, rotate = "oblimin")
+
+# Assign weights based on factor loadings
+weights_fsanc <- abs(fa_fsanc$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_fsanc <- data_fsanc * weights_fsanc
+
+# Sum up the weighted scores to create the composite variable
+friend_sanction <- rowSums(weighted_scores_fsanc)
+
+summary(friend_sanction)
+
+
+# Create a data frame with the variables of interest PARENT
+data_psanc <- data.frame(p_dress_composite = px_sem_punish$p_dress_composite, 
+                         p_pronoun_composite = px_sem_punish$p_pronoun_composite,
+                         p_swear_composite = px_sem_punish$p_swear_composite,
+                         p_partnercaste_composite = px_sem_punish$p_partnercaste_composite, 
+                         p_partnerrel_composite = px_sem_punish$p_partnerrel_composite,
+                         p_preg_composite = px_sem_punish$p_preg_composite)
+
+
+# Conduct a factor analysis 
+fa_psanc <- fa(data_psanc, nfactors = 1, rotate = "oblimin")
+summary(fa_psanc)
+dim(fa_psanc$loadings)
+
+# Assign weights based on factor loadings
+weights_psanc <- abs(fa_psanc$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_psanc <- data_psanc * weights_psanc
+
+# Sum up the weighted scores to create the composite variable
+parent_sanction <- rowSums(weighted_scores_psanc)
+
+summary(parent_sanction)
+
+# Interpretation (for parent_sanction)
+# 
+# The root mean square of the residuals (RMSR) is 0.1, which is relatively small and suggests that the model fits the data well. The Tucker Lewis Index (TLI) of factoring reliability is 0.665, which is below the recommended threshold of 0.95 for a good fit. However, TLI can be affected by the number of factors extracted, the sample size, and the complexity of the model, so it should be interpreted with caution.The root mean square error of approximation (RMSEA) index is 0.242, which is relatively high and suggests that the model may not fit the data well. However, the 90% confidence intervals for the RMSEA do not include values below 0.05, which suggests that the model may still be acceptable. The multiple R square of scores with factors is 0.89, which indicates that the factor explains a substantial amount of the variance in the composite variable. Overall, the factor analysis suggests that the seven items you included in the analysis are related to a single underlying construct or factor, which you can interpret as "parental sanctions". However, some of the fit indices (such as TLI and RMSEA) suggest that the model may not fit the data well, so you may want to consider alternative models or approaches to validate the results. Additionally, the choice of rotation method can affect the interpretation of the factor loadings, so it may be useful to try other rotation methods (such as varimax or oblique) to see if the results are consistent. The output shows a summary of the parent_sanction variable, which was created by summing up the weighted scores of the seven items using the weights obtained from the factor analysis. Here are some key points to consider when interpreting the output: The minimum value of the parent_sanction variable is 0, which suggests that some participants did not endorse any of the negative consequences associated with parental sanctions. The median value of the parent_sanction variable is 5.361, which suggests that the average participant endorsed about 5-6 negative consequences associated with parental sanctions. The mean value of the parent_sanction variable is 6.758, which is slightly higher than the median. This suggests that the distribution of scores may be slightly skewed to the right (i.e., there may be some participants who endorsed a large number of negative consequences). The maximum value of the parent_sanction variable is 28.484, which is quite high compared to the other values. This suggests that there may be some participants who endorsed a very large number of negative consequences, which could be considered outliers. Overall, the summary statistics suggest that the parent_sanction variable has a wide range of values, with some participants endorsing few negative consequences and others endorsing a large number of negative consequences. 
+
+# Create a data frame with the variables of interest EXTENDED
+
+data_xsanc <- data.frame(x_dress_composite = px_sem_punish$x_dress_composite, 
+                         x_pronoun_composite = px_sem_punish$x_pronoun_composite,
+                         p_swear_composite = px_sem_punish$p_swear_composite,
+                         x_partnercaste_composite = px_sem_punish$x_partnercaste_composite, 
+                         x_partnerrel_composite = px_sem_punish$x_partnerrel_composite, 
+                         x_preg_composite = px_sem_punish$x_preg_composite)
+
+
+# Conduct a factor analysis 
+fa_xsanc <- fa(data_xsanc, nfactors = 1, rotate = "oblimin")
+
+# Assign weights based on factor loadings
+weights_xsanc <- abs(fa_xsanc$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_xsanc <- data_xsanc * weights_xsanc
+
+# Sum up the weighted scores to create the composite variable
+extended_sanction <- rowSums(weighted_scores_xsanc)
+
+summary(extended_sanction)
+
+
+
+data_famsanc <- data.frame(p_dress_composite = px_sem_punish$p_dress_composite, 
+                         p_partnercaste_composite = px_sem_punish$p_partnercaste_composite, 
+                         p_partnerrel_composite = px_sem_punish$p_partnerrel_composite,
+                         x_dress_composite = px_sem_punish$x_dress_composite, 
+                         x_partnercaste_composite = px_sem_punish$x_partnercaste_composite, 
+                         x_partnerrel_composite = px_sem_punish$x_partnerrel_composite)
+
+# Conduct a factor analysis 
+fa_famsanc <- fa(data_famsanc, nfactors = 1, rotate = "oblimin")
+
+# Assign weights based on factor loadings
+weights_famsanc <- abs(fa_famsanc$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_famsanc <- data_famsanc * weights_famsanc
+
+# Sum up the weighted scores to create the composite variable
+family_sanction <- rowSums(weighted_scores_famsanc)
+
+summary(family_sanction)
+
+
+```
+
+
+Now, onto the SEM models!
+
+Note to self: I create composite scores for punishment here that ain't doing much so will use them in my stage 1 analysis
+
+MODEL 1 - GENDER NORMS
+
+Need to write this up in greater detail, but what I am seeing is that there is no evidence for a signficiant difference in the structural pathways for p and x. I can still discuss the coefficients, but not seeing an overall difference. Will probably default to the full model without splitting into p v/s x
+
+
+```{r include=FALSE, eval=FALSE}
+
+sem_a <- data.frame(l_tradition = px_sem_punish$l_tradition,
+                   l_famproblems = px_sem_punish$l_famproblems,
+                   g_famrep = px_sem_punish$g_famrep,
+                   l_p_careerinf = px_sem_punish$l_p_careerinf,
+                   g_r_careerinf = px_sem_punish$g_r_careerinf,
+                   l_p_marriageinf = px_sem_punish$l_p_marriageinf,
+                   g_r_marriageinf = px_sem_punish$g_r_marriageinf,
+                   l_womenwork = px_sem_punish$l_womenwork, 
+                   l_wifelisten = px_sem_punish$l_wifelisten, 
+                   l_girljeans = px_sem_punish$l_girljeans,
+                   g_firstname = px_sem_punish$g_firstname,
+                   parent_sanction = parent_sanction,
+                   extended_sanction = extended_sanction,
+                   condition = px_sem_punish$condition) 
+
+model_a1 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+  fam.influence =~ l_p_careerinf + g_r_careerinf + l_p_marriageinf + g_r_marriageinf
+  women.maryada =~ l_womenwork + l_wifelisten + l_girljeans + g_firstname
+  
+  # structural model
+  fam.influence ~ parent_sanction + extended_sanction
+  worry.fam ~ parent_sanction + extended_sanction
+  women.maryada ~ worry.fam + fam.influence + parent_sanction + extended_sanction
+  '
+
+fit_a1_mi <- sem(model_a1, 
+              data = sem_a, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+summary(fit_a1_mi, fit.measures = TRUE, standardized = TRUE)
+
+# discuss overall results
+
+
+# comparing to structural model
+fit_a1_s <- sem(model_a1, 
+              data = sem_a, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals", "lv.covariances", "regressions"))
+
+anova(fit_a1_mi, fit_a1_s)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)
+# fit_a1_mi 109         453.45                              
+# fit_a1_s  112         457.68      1.671       3     0.6434
+
+
+```
+
+MODEL 2 - RELIGIOUS PERFORMANCE
+
+```{r}
+sem_b <- data.frame(l_tradition = px_sem_punish$l_tradition, 
+                   l_famproblems = px_sem_punish$l_famproblems, 
+                   g_famrep = px_sem_punish$g_famrep, 
+                   l_puja = px_sem_punish$l_puja, 
+                   l_bhajan = px_sem_punish$l_bhajan,
+                   l_vrat = px_sem_punish$l_vrat,
+                   l_temple = px_sem_punish$l_temple, 
+                   l_relshows = px_sem_punish$l_relshows, 
+                   l_relbook = px_sem_punish$l_relbook,
+                   l_p_careerinf = px_sem_punish$l_p_careerinf,
+                   g_r_careerinf = px_sem_punish$g_r_careerinf,
+                   l_p_marriageinf = px_sem_punish$l_p_marriageinf,
+                   g_r_marriageinf = px_sem_punish$g_r_marriageinf,
+                   condition = px_sem_punish$condition)
+
+model_b1 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+  fam.influence =~ l_p_careerinf + g_r_careerinf + l_p_marriageinf + g_r_marriageinf
+  rel.perf =~ l_puja + l_bhajan + l_vrat + l_temple + l_relshows + l_relbook
+  
+  # structural model
+  rel.perf ~ worry.fam + fam.influence
+  '
+
+fit_b1_mi <- sem(model_b1, 
+              data = sem_b, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+summary(fit_b1_mi, fit.measures = TRUE, standardized = TRUE)
+
+# discuss overall results
+
+
+# comparing to structural model
+fit_b1_s <- sem(model_b1, 
+              data = sem_b, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals", "regressions"))
+
+anova(fit_b1_mi, fit_b1_s)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)  
+# fit_b1_mi 157         519.89                                
+# fit_b1_s  159         533.58     4.7104       2    0.09487 .
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#weak evidence of a difference that the structural paths are not significantly different from one another
+
+
+model_b1_con <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+  fam.influence =~ l_p_careerinf + g_r_careerinf + l_p_marriageinf + g_r_marriageinf
+  rel.perf =~ l_puja + l_bhajan + l_vrat + l_temple + l_relshows + l_relbook
+  
+  # structural model
+  rel.perf ~ c(b1, b1)*worry.fam + c(b2, b2)*fam.influence
+  '
+
+fit_b1_con <- sem(model_b1_con, 
+              data = sem_b, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+
+model_b1_fam <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+  fam.influence =~ l_p_careerinf + g_r_careerinf + l_p_marriageinf + g_r_marriageinf
+  rel.perf =~ l_puja + l_bhajan + l_vrat + l_temple + l_relshows + l_relbook
+  
+  # structural model
+  rel.perf ~ c(b1, b1)*worry.fam + fam.influence
+  '
+
+fit_b1_fam <- sem(model_b1_fam, 
+              data = sem_b, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_b1_con, fit_b1_fam)
+
+# worry fam
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#             Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)
+# fit_b1_fam 158         531.75                              
+# fit_b1_con 159         533.58    0.56757       1     0.4512
+
+
+# fam influence
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#             Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)
+# fit_b1_fam 158         530.94                              
+# fit_b1_con 159         533.58    0.86402       1     0.3526
+
+
+# discuss the general model
+
+```
+
+MODEL 3 - MARYADA AND SPACE
+Not able to reject the hypotheses that there is structural invariance so can stick to discussing the fuller model. Higher worry about family/face predicts higher values on self-reported adherance to maryada in college, at home and in the native place. 
+
+
+```{r include=FALSE, eval=FALSE}
+# I want to create a composite score for the other vars - COLLEGE
+
+# Create a data frame with the variables of interest COLLEGE
+c_comp <- data.frame(c_hangout = px_sem_punish_num$c_hangout, 
+                     c_caste_giveupseat = px_sem_punish_num$c_caste_giveupseat,
+                     c_traditionalclothing = px_sem_punish_num$c_traditionalclothing,
+                     c_interimclothing = px_sem_punish_num$c_interimclothing,
+                     c_modernclothing = px_sem_punish_num$c_modernclothing,
+                     c_caste_distance = px_sem_punish_num$c_caste_distance, 
+                     c_caste_rules = px_sem_punish_num$c_caste_rules, 
+                     c_feet = px_sem_punish_num$c_feet, 
+                     c_oldrude = px_sem_punish_num$c_oldrude, 
+                     c_agree = px_sem_punish_num$c_agree,
+                     c_generalrules = px_sem_punish_num$c_generalrules)
+                         
+
+# Conduct a factor analysis with oblimin rotation
+fa_c_comp <- fa(c_comp, nfactors = 1, rotate = "oblimin")
+fa_c_comp$loadings
+
+# Assign weights based on factor loadings
+weights_c_comp <- abs(fa_c_comp$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_c_comp <- c_comp*weights_c_comp
+
+# Sum up the weighted scores to create the composite variable
+college_comp <- rowSums(weighted_scores_c_comp)
+
+summary(college_comp)
+
+# I want to create a composite score for the other vars - HOME
+
+# Create a data frame with the variables of interest COLLEGE
+h_comp <- data.frame(h_pronouns = px_sem_punish_num$h_pronouns, 
+                     h_feet = px_sem_punish_num$h_feet,
+                     h_oldrude = px_sem_punish_num$h_oldrude, 
+                     h_agree = px_sem_punish_num$h_agree, 
+                     h_foodserve = px_sem_punish_num$h_foodserve, 
+                     h_generalrules = px_sem_punish_num$h_generalrules)
+                         
+
+# Conduct a factor analysis with oblimin rotation
+fa_h_comp <- fa(h_comp, nfactors = 1, rotate = "oblimin")
+fa_h_comp$loadings
+
+# Assign weights based on factor loadings
+weights_h_comp <- abs(fa_h_comp$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_h_comp <- h_comp*weights_h_comp
+
+# Sum up the weighted scores to create the composite variable
+home_comp <- rowSums(weighted_scores_h_comp)
+
+summary(home_comp)
+
+# I want to create a composite score for the other vars - NATIVE PLACE
+
+# Create a data frame with the variables of interest COLLEGE
+np_comp <- data.frame(np_caste_giveupseat = px_sem_punish_num$np_caste_giveupseat, 
+                     np_caste_distance = px_sem_punish_num$np_caste_distance,
+                     np_caste_rules = px_sem_punish_num$np_caste_rules,
+                     np_traditionalclothing = px_sem_punish_num$np_traditionalclothing,
+                     np_interimclothing = px_sem_punish_num$np_interimclothing,
+                     np_modernclothing = px_sem_punish_num$np_modernclothing,
+                     np_pronouns = px_sem_punish_num$np_pronouns, 
+                     np_feet = px_sem_punish_num$np_feet, 
+                     np_oldrude = px_sem_punish_num$np_oldrude,
+                     np_agree = px_sem_punish_num$np_agree,
+                     np_foodserve = px_sem_punish_num$np_foodserve,
+                     np_generalrules = px_sem_punish_num$np_generalrules)
+                         
+
+# Conduct a factor analysis with oblimin rotation
+fa_np_comp <- fa(np_comp, nfactors = 1, rotate = "oblimin")
+fa_np_comp$loadings
+
+# Assign weights based on factor loadings
+weights_np_comp <- abs(fa_np_comp$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_np_comp <- np_comp*weights_np_comp
+
+# Sum up the weighted scores to create the composite variable
+np_comp <- rowSums(weighted_scores_np_comp)
+
+summary(np_comp)
+
+```
+
+
+```{r}
+
+fam_influence <- data.frame(l_p_careerinf = px_sem_punish_num$l_p_careerinf,
+                   g_r_careerinf = px_sem_punish_num$g_r_careerinf,
+                   l_p_marriageinf = px_sem_punish_num$l_p_marriageinf,
+                   g_r_marriageinf = px_sem_punish_num$g_r_marriageinf)
+                         
+
+# Conduct a factor analysis with oblimin rotation
+fa_fam_influence <- fa(fam_influence, nfactors = 1, rotate = "oblimin")
+
+# Assign weights based on factor loadings
+weights_fam_influence <- abs(fa_fam_influence$loadings)
+
+# Multiply each variable by its weight to create a weighted score
+weighted_scores_fam_influence <- fam_influence*weights_fam_influence
+
+# Sum up the weighted scores to create the composite variable
+faminf_comp <- rowSums(weighted_scores_fam_influence)
+
+summary(faminf_comp)
+
+
+```
+
+
+even though parent and extended sanction qs were asked outside of gaze, they are asked right after gaze so transferability
+
+
+```{r}
+
+library(lavaan)
+library(semTools)
+
+sem_c <- data.frame(l_tradition = px_sem_punish$l_tradition,
+                    l_famproblems = px_sem_punish$l_famproblems,
+                    g_famrep = px_sem_punish$g_famrep,
+                    college_comp = college_comp,
+                    home_comp = home_comp,
+                    np_comp = np_comp,
+                    parent_sanction = parent_sanction,
+                    extended_sanction = extended_sanction,
+                    condition = px_sem_punish$condition)
+
+model_c1 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ parent_sanction + extended_sanction
+  college_comp ~ worry.fam + parent_sanction + extended_sanction
+  home_comp ~ worry.fam + parent_sanction + extended_sanction
+  np_comp ~ worry.fam + parent_sanction + extended_sanction
+  '
+
+fit_c1 <- sem(model_c1, 
+              data = sem_c)
+
+summary(fit_c1, fit.measures = TRUE, standardized = TRUE)
+
+
+
+fit_c1_mi <- sem(model_c1, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+summary(fit_c1_mi, fit.measures = TRUE, standardized = TRUE)
+
+
+kya <- standardizedsolution(fit_c1_mi, se = TRUE, zstat = TRUE, pvalue = TRUE, ci = TRUE) %>%
+  filter(op == "=~") %>%
+  dplyr::select(group, Outcome=lhs, Item=rhs, Coefficient=est.std, ci.lower, ci.upper, SE=se, Z=z, 'p-value'=pvalue) %>%
+  mutate(across(where(is.numeric), round, 3)) %>%
+  mutate(`p-value` = ifelse(`p-value` < 0.05, paste0(`p-value`, "*"), `p-value`)) %>%
+  mutate(group = if_else(group == 1, "parent", if_else(group == 2, "extended family", as.character(group))))
+
+saveRDS(sem_reg, file="msem_regression.Rda")
+```
+
+
+
+```{r}
+# Create the tibble
+sedm_sem <- tibble(
+  Condition = c(rep("parent", 11), rep("extended family", 11)),
+  Path = c(
+    "expected sanctions from parents to concern for family obligation",
+    "expected sanctions from extended family to concern for family obligation",
+    "concern for family obligation to self-reported performance of maryada in college",
+    "expected sanctions from parents to self-reported performance of maryada in college",
+    "expected sanctions from extended family to self-reported performance of maryada in college",
+    "concern for family obligation to self-reported performance of maryada at home",
+    "expected sanctions from parents to self-reported performance of maryada at home",
+    "expected sanctions from extended family to self-reported performance of maryada at home",
+    "concern for family obligation to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to self-reported performance of maryada in the native place",
+    "expected sanctions from extended family to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to concern for family obligation",
+    "expected sanctions from extended family to concern for family obligation",
+    "concern for family obligation to self-reported performance of maryada in college",
+    "expected sanctions from parents to self-reported performance of maryada in college",
+    "expected sanctions from extended family to self-reported performance of maryada in college",
+    "concern for family obligation to self-reported performance of maryada at home",
+    "expected sanctions from parents to self-reported performance of maryada at home",
+    "expected sanctions from extended family to self-reported performance of maryada at home",
+    "concern for family obligation to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to self-reported performance of maryada in the native place",
+    "expected sanctions from extended family to self-reported performance of maryada in the native place"
+  ),
+  Standardised_coefficient = c(0.131, -0.094, 0.049, 0.008, -0.252, 0.372, 0.035, -0.079, 0.070, -0.115, 0.113, -0.218, 0.255, 0.048, -0.016, -0.120, 0.367, -0.132, 0.064, 0.082, -0.223, 0.265),
+  CI_lower = c(-0.055, -0.282, -0.065, -0.188, -0.456, 0.251, -0.121, -0.249, -0.081, -0.299, -0.091, -0.447, 0.011, -0.097, -0.378, -0.457, 0.240, -0.374, -0.182, -0.064, -0.503, -0.015),
+  CI_upper = c(0.318, 0.094, 0.163, 0.204, -0.048, 0.492, 0.190, 0.092, 0.222, 0.069, 0.317, 0.010, 0.499, 0.194, 0.347, 0.217, 0.494, 0.109, 0.311, 0.228, 0.058, 0.544),
+  SE = c(0.095, 0.096, 0.058, 0.100, 0.104, 0.061, 0.079, 0.087, 0.077, 0.094, 0.104, 0.117, 0.124, 0.074, 0.185, 0.172, 0.065, 0.123, 0.126, 0.075, 0.143, 0.143),
+  Z = c(1.377, -0.981, 0.843, 0.082, -2.424, 6.053, 0.437, -0.905, 0.912, -1.224, 1.088, -1.873, 2.050, 0.649, -0.084, -0.699, 5.677, -1.074, 0.509, 1.095, -1.557, 1.856),
+  p_value = c(0.168, 0.327, 0.399, 0.935, 0.015, 0.000, 0.662, 0.365, 0.362, 0.221, 0.277, 0.061, 0.040, 0.516, 0.933, 0.485, 0.000, 0.283, 0.611, 0.273, 0.119, 0.063)
+)
+
+saveRDS(sedm_sem, file="sedm_sem.Rda")
+
+```
+
+```{r}
+
+sedm_short <- tibble(
+  Condition = c(
+    rep("parent", 11),
+    rep("extended family", 11)
+  ),
+  Path = c(
+    "expected sanctions from parents to concern for family obligation",
+    "expected sanctions from extended family to concern for family obligation",
+    "concern for family obligation to self-reported performance of maryada in college",
+    "expected sanctions from parents to self-reported performance of maryada in college",
+    "expected sanctions from extended family to self-reported performance of maryada in college",
+    "concern for family obligation to self-reported performance of maryada at home",
+    "expected sanctions from parents to self-reported performance of maryada at home",
+    "expected sanctions from extended family to self-reported performance of maryada at home",
+    "concern for family obligation to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to self-reported performance of maryada in the native place",
+    "expected sanctions from extended family to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to concern for family obligation",
+    "expected sanctions from extended family to concern for family obligation",
+    "concern for family obligation to self-reported performance of maryada in college",
+    "expected sanctions from parents to self-reported performance of maryada in college",
+    "expected sanctions from extended family to self-reported performance of maryada in college",
+    "concern for family obligation to self-reported performance of maryada at home",
+    "expected sanctions from parents to self-reported performance of maryada at home",
+    "expected sanctions from extended family to self-reported performance of maryada at home",
+    "concern for family obligation to self-reported performance of maryada in the native place",
+    "expected sanctions from parents to self-reported performance of maryada in the native place",
+    "expected sanctions from extended family to self-reported performance of maryada in the native place"
+  ),
+  `Standardised coefficient` = c(
+    "0.131", "-0.094", "0.049", "0.008", "-0.252**", "0.372***", "0.035", "-0.079", "0.070", "-0.115", "0.113", "-0.218*", "0.255", "0.048", "-0.016", "-0.120", "0.367***", "-0.132", "0.064", "0.082", "-0.223", "0.265*")
+)
+
+# View the table
+print(sedm_short)
+
+saveRDS(sedm_short, file="sedm_short_sem.Rda")
+
+```
+
+
+
+
+
+
+```{r}
+
+# Print selected results
+print(selected_results)
+
+
+# discuss overall results
+
+
+# comparing to structural model
+fit_c1_s <- sem(model_c1, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals", "lv.covariances", "regressions"))
+
+anova(fit_c1_mi, fit_c1_s)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#           Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)  
+# fit_c1_mi 33         39.438                                
+# fit_c1_s  44         72.998     21.732      11    0.02654 *
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+model_c1_con <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction 
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+                                                
+fit_c1_con <- sem(model_c1_con, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+# parent_sanction --> worry.fam
+
+model_c1_un1 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction 
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un1 <- sem(model_c1_un1, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un1)
+
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)  
+# fit_c1_un1 43         60.992                                
+# fit_c1_con 44         72.998     6.4008       1    0.01141 *
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+# extended_sanction --> worry.fam
+
+model_c1_un2 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un2 <- sem(model_c1_un2, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un2)
+# 
+
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)  
+# fit_c1_un2 43         62.109                                
+# fit_c1_con 44         72.998     5.9971       1    0.01433 *
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+# college_comp --> worry.fam
+
+model_c1_un3 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un3 <- sem(model_c1_un3, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un3)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)
+# fit_c1_un3 43         63.919                              
+# fit_c1_con 44         64.231    0.16126       1      0.688
+
+# college_comp --> parent_sanction
+
+model_c1_un4 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un4 <- sem(model_c1_un4, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un4)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#            Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)
+# fit_c1_un4 43         64.071                              
+# fit_c1_con 44         64.231    0.15963       1     0.6895
+
+# college_comp --> extended_sanction
+
+model_c1_un5 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un5 <- sem(model_c1_un5, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un5)
+
+#not sig
+
+# home_comp --> worry.fam
+
+model_c1_un6 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un6 <- sem(model_c1_un6, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un6)
+
+#no
+
+# home_comp --> parent_sanction
+
+model_c1_un7 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un7 <- sem(model_c1_un7, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un7)
+
+#no
+
+# home_comp --> extended_sanction
+
+model_c1_un8 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un8 <- sem(model_c1_un8, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un8)
+
+#no
+
+# np_comp --> worry.fam
+
+model_c1_un9 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ worry.fam  + c(c10, c10)*parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un9 <- sem(model_c1_un9,
+              data = sem_c,
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un9)
+
+
+model_c1_un10 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction 
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + parent_sanction + c(c11, c11)*extended_sanction
+  '
+
+fit_c1_un10 <- sem(model_c1_un10, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un10)
+
+# Scaled Chi-Squared Difference Test (method = “satorra.2000”)
+# 
+# lavaan NOTE:
+#     The “Chisq” column contains standard test statistics, not the
+#     robust test that should be reported per model. A robust difference
+#     test is a function of two standard (not robust) statistics.
+#  
+#             Df AIC BIC  Chisq Chisq diff Df diff Pr(>Chisq)  
+# fit_c1_un10 54         95.535                                
+# fit_c1_con  55         99.770     4.2356       1    0.03958 *
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+# np_comp --> extended_sanction
+
+model_c1_un11 <- '
+  #measurement model
+  worry.fam =~ l_tradition + l_famproblems + g_famrep
+
+  # structural model
+  worry.fam ~ c(c1, c1)*parent_sanction + c(c2, c2)*extended_sanction
+  college_comp ~ c(c3, c3)*worry.fam  + c(c4, c4)*parent_sanction + c(c5, c5)*extended_sanction 
+  home_comp ~ c(c6, c6)*worry.fam  + c(c7, c7)*parent_sanction + c(c8, c8)*extended_sanction
+  np_comp ~ c(c9, c9)*worry.fam  + c(c10, c10)*parent_sanction + extended_sanction
+  '
+
+fit_c1_un11 <- sem(model_c1_un11, 
+              data = sem_c, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+anova(fit_c1_con, fit_c1_un11)
+
+#no
+
+
+```
+
+MULTI-GROUP PART:
+
+measurement models - that has been constrained to be the same. Ignore that literature because here it makes zero sense NOT to constrain them to be the same because the LV has to be the same thing. Implemented as a multi-group analysis in the software. All of the measurement part, everything is fixed to be the same. The arrows can have different values for both groups.
+
+Parent sanctions --> fam worry: punishing parents higher value on fam tradition. What sort of diff dependent on whether they think about parent or extended. Seems to be a subtle difference? Group you were asked to think about in the experiment, sanctions from them would be more prominent in your mind. 
+
+constrain loadings intercepts measurement error variances
+
+regular SEM but you want full interaction bw - allowing the coeffs to have different values. COMMAND IN LAVAAN TO GET THIS DONE. THIS IS NOT ACTUALLY MULTI-GROUP ANALYSIS REALLY. 
+
+Language is unhelpful -> measurement equivalence as a given. Then you come to the strucrual invariance but it is a bad term. That is just an interaction. Very slightly strongly effect
+interactions by group, do their strength change when you are in one condition vs the other?
+substantive q of interests!
+- start them all being equal with hypothesis about what is different.
+- how coef vary by group
+
+
+```{r}
+
+library(lavaan)
+library(semTools)
+
+sem_d <- data.frame(college_comp = college_comp,
+                   home_comp = home_comp,
+                   np_comp = np_comp,
+                   family_sanction = family_sanction,
+                   condition = px_sem_punish$condition)
+
+
+
+sem_d <- data.frame(l_tradition = px_sem_punish_num$l_tradition,
+                    g_famrep = px_sem_punish$g_famrep,
+                    college_comp = college_comp,
+                    home_comp = home_comp,
+                    np_comp = np_comp,
+                    family_sanction = family_sanction,
+                    condition = px_sem_punish$condition)
+
+model_d1 <- '
+  #measurement model
+  worry.fam =~ l_tradition + g_famrep
+
+  # structural model
+  worry.fam ~ family_sanction
+  college_comp ~ worry.fam + family_sanction
+  home_comp ~ worry.fam + family_sanction
+  np_comp ~ worry.fam + family_sanction
+  '
+
+fit_d1 <- sem(model_d1, 
+              data = sem_d)
+
+summary(fit_d1, fit.measures = TRUE, standardized = TRUE)
+
+
+fit_d1_mi <- sem(model_d1, 
+              data = sem_d, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals"))
+
+summary(fit_d1_mi, fit.measures = TRUE, standardized = TRUE)
+
+
+# discuss overall results
+
+
+# comparing to structural model
+fit_d1_s <- sem(model_d1, 
+              data = sem_d, 
+              group = "condition", group.equal = c("loadings", "intercepts", "residuals", "lv.covariances", "regressions"))
+
+anova(fit_d1_mi, fit_d1_s)
+
+```
+
+
+
+
+
